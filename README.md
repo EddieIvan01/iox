@@ -27,13 +27,13 @@ Of course, because `iox` is written in Go, the static-link-program is a little b
 
 ## Usage
 
-#### Two mode
-
 You can see, all params are uniform. `-l/--local` means listen on a local port; `-r/--remote` means connect to remote host
 
-**fwd**
+#### Two mode
 
-Local2Local
+**fwd**：
+
+Listen on `0.0.0.0:8888` and `0.0.0.0:9999`, forward traffic between 2 connections
 
 ```
 ./iox fwd -l 8888 -l 9999
@@ -43,7 +43,7 @@ for lcx:
 ./lcx -listen 8888 9999
 ```
 
-Local2Remote
+Listen on `0.0.0.0:8888`, forward traffic to `1.1.1.1:9999`
 
 ```
 ./iox fwd -l 8888 -r 1.1.1.1:9999
@@ -53,7 +53,7 @@ for lcx:
 ./lcx -tran 8888 1.1.1.1 9999
 ```
 
-Remote2Remote
+Connect `1.1.1.1:8888` and `1.1.1.1:9999`, forward between 2 connection
 
 ```
 ./iox fwd -r 1.1.1.1:8888 -r 1.1.1.1:9999
@@ -65,7 +65,7 @@ for lcx:
 
 **proxy**
 
-LocalProxy
+Start Socks5 server on `0.0.0.0:1080`
 
 ```
 ./iox proxy -l 1080
@@ -75,7 +75,11 @@ for ew:
 ./ew -s ssocksd -l 1080
 ```
 
-RemoteProxy (command pair)
+Start Socks5 server on be-controlled host, then forward to internet VPS
+
+VPS forward 0.0.0.0:9999 to 0.0.0.0:1080
+
+You must use in pair, because it contains a simple protocol to control connecting back
 
 ```
 ./iox proxy -r 1.1.1.1:9999
@@ -87,6 +91,15 @@ for ew:
 ./ew -s rssocks -d 1.1.1.1 -e 9999
 ```
 
+Then connect intranet host
+
+```
+# proxychains.conf
+# socks5://1.1.1.1:1080
+
+$ proxychains rdesktop 192.168.0.100:3389
+```
+
 ***
 
 #### enable encryption
@@ -94,9 +107,12 @@ for ew:
 For example, we forward 3389 port in intranet to our VPS
 
 ```
+// be-controller host
 ./iox fwd -r 192.168.0.100:3389 -r *1.1.1.1:8888 -k 656565
 
-./iox fwd -l *8888 -l 1080 -k 656565
+
+// our VPS
+./iox fwd -l *8888 -l 33890 -k 656565
 ```
 
 It's easy to understand: traffic between be-controlled host and our VPS:8888 will be encrypted, the pre-shared secret key is 'AAA', `iox` will use it to generate seed key and IV, then encrypt with AES-CTR
@@ -108,17 +124,20 @@ So, the `*` should be used in pairs
 ./iox fwd -l *1001 -r *127.0.0.1:1002 -k 000102
 ./iox fwd -l *1002 -r *127.0.0.1:1003 -k 000102
 ./iox proxy -l *1003
+
+
+$ curl google.com -x socks5://127.0.0.1:1000
 ```
 
 Using `iox` as a simple ShadowSocks
 
 ```
 // ssserver
-./iox proxy -l *9999
+./iox proxy -l *9999 -k 000102
 
 
 // sslocal
-./iox fwd -l 1080 -r *VPS:9999
+./iox fwd -l 1080 -r *VPS:9999 -k 000102
 ```
 
 ## License
