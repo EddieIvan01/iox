@@ -1,3 +1,4 @@
+// code from https://github.com/ring04h/s5.go
 package socks5
 
 import (

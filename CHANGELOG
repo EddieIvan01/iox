@@ -1,0 +1,4 @@
+v0.1.1: 1. Logic optimization, while both two connections are encrypted,
+        traffic will be forwarded without additional encryption and decryption
+
+        2. Made some little improvements

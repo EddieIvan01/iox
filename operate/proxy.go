@@ -154,7 +154,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 	localConnBuffer := make(chan net.Conn, MAX_CONNECTION/2)
 	defer close(localConnBuffer)
 
-	logger.Info("Forward socks5 server to %s", local)
+	logger.Success("Forward socks5 server to %s", local)
 
 	// handle local connection
 	go func() {

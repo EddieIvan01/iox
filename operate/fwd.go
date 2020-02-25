@@ -23,6 +23,8 @@ func Local2Remote(local string, remote string, lenc bool, renc bool) {
 		}
 		defer listener.Close()
 
+		logger.Success("Forward between %s and %s", local, remote)
+
 		for {
 			logger.Info("Wait for connection on %s", local)
 
@@ -74,7 +76,7 @@ func Local2Remote(local string, remote string, lenc bool, renc bool) {
 					return
 				}
 
-				logger.Success(
+				logger.Info(
 					"Open pipe: %s <== FWD ==> %s",
 					localConn.RemoteAddr().String(),
 					remoteConn.RemoteAddr().String(),
@@ -82,7 +84,7 @@ func Local2Remote(local string, remote string, lenc bool, renc bool) {
 
 				netio.PipeForward(localConnCtx, remoteConnCtx)
 
-				logger.Success(
+				logger.Info(
 					"Close pipe: %s <== FWD ==> %s",
 					localConn.RemoteAddr().String(),
 					remoteConn.RemoteAddr().String(),
@@ -96,6 +98,8 @@ func Local2Remote(local string, remote string, lenc bool, renc bool) {
 
 func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 	if option.PROTOCOL == "TCP" {
+		logger.Success("Forward between %s and %s", localA, localB)
+
 		for {
 			signal := make(chan byte)
 			var localConnA, localConnB net.Conn
@@ -199,13 +203,13 @@ func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 					)
 				}
 
-				logger.Success(
+				logger.Info(
 					"Open pipe: %s <== FWD ==> %s",
 					localConnA.RemoteAddr().String(),
 					localConnB.RemoteAddr().String(),
 				)
 				netio.PipeForward(localConnCtxA, localConnCtxB)
-				logger.Success(
+				logger.Info(
 					"Close pipe: %s <== FWD ==> %s",
 					localConnA.RemoteAddr().String(),
 					localConnB.RemoteAddr().String(),
@@ -220,6 +224,8 @@ func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 
 func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 	if option.PROTOCOL == "TCP" {
+		logger.Success("Forward between %s and %s", remoteA, remoteB)
+
 		for {
 			var remoteConnA net.Conn
 			var remoteConnB net.Conn
@@ -309,13 +315,13 @@ func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 						)
 					}
 
-					logger.Success(
+					logger.Info(
 						"Start pipe: %s <== FWD ==> %s",
 						remoteConnA.RemoteAddr().String(),
 						remoteConnB.RemoteAddr().String(),
 					)
 					netio.PipeForward(remoteConnCtxA, remoteConnCtxB)
-					logger.Success(
+					logger.Info(
 						"Close pipe: %s <== FWD ==> %s",
 						remoteConnA.RemoteAddr().String(),
 						remoteConnB.RemoteAddr().String(),

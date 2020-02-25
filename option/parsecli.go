@@ -44,6 +44,9 @@ func ParseCli(args []string) (
 
 	switch mode {
 	case "fwd", "proxy":
+	case "-h", "--help":
+		err = PrintUsage
+		return
 	default:
 		err = errUnrecognizedMode
 		return
@@ -153,5 +156,30 @@ func ParseCli(args []string) (
 		}
 	}
 
+	shouldFwdWithoutDec(lenc, renc)
+
 	return
+}
+
+func shouldFwdWithoutDec(lenc []bool, renc []bool) {
+	if len(lenc)+len(renc) != 2 {
+		return
+	}
+
+	var result uint8
+	for i, _ := range lenc {
+		if lenc[i] {
+			result++
+		}
+	}
+
+	for i, _ := range renc {
+		if renc[i] {
+			result++
+		}
+	}
+
+	if result == 2 {
+		FORWARD_WITHOUT_DEC = true
+	}
 }

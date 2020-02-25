@@ -28,6 +28,8 @@ func NewTCPCtx(conn net.Conn, encrypted bool) (*TCPCtx, error) {
 		tc.SetLinger(0)
 	}
 
+	encrypted = encrypted && !option.FORWARD_WITHOUT_DEC
+
 	ctx := &TCPCtx{
 		Conn:      conn,
 		encrypted: encrypted,

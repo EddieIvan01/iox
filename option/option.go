@@ -15,4 +15,7 @@ var (
 
 	// enable log output
 	VERBOSE = false
+
+	// logic optimization, changed in v0.1.1
+	FORWARD_WITHOUT_DEC = false
 )

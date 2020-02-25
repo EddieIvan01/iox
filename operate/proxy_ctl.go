@@ -107,7 +107,7 @@ func serverHandshake(listener net.Listener) net.Conn {
 		}
 
 		if p.CMD == CTL_HANDSHAKE && p.N == CLIENT_HANDSHAKE {
-			logger.Info("Remote socks5 handshake ok")
+			logger.Success("Remote socks5 handshake ok")
 			masterConn.Write(serialize(Protocol{
 				CMD: CTL_HANDSHAKE,
 				N:   SERVER_HANDSHAKE,
@@ -144,7 +144,7 @@ func clientHandshake(remote string) (net.Conn, error) {
 		return nil, errors.New("Connect to remote forward server error")
 	}
 	if p.CMD == CTL_HANDSHAKE && p.N == SERVER_HANDSHAKE {
-		logger.Info("Connect to remote forward server ok")
+		logger.Success("Connect to remote forward server ok")
 	} else {
 		return nil, errors.New("Connect to remote forward server error")
 	}
