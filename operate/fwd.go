@@ -100,14 +100,19 @@ func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 	if option.PROTOCOL == "TCP" {
 		logger.Success("Forward between %s and %s", localA, localB)
 
+		var listenerA net.Listener
+		var listenerB net.Listener
+
 		for {
 			signal := make(chan byte)
 			var localConnA, localConnB net.Conn
 
 			go func() {
-				// define listener as a local variable
-				// to control accepting connection timing
-				listenerA, err := net.Listen("tcp", localA)
+				// Call listener.Close when goroutine returns.
+				// Listener in Go will release the port immediately
+				// after calling listener.Close without waiting for TIME_WAIT
+				var err error
+				listenerA, err = net.Listen("tcp", localA)
 				if err != nil {
 					logger.Warn(
 						"Listen on %s error: %s",
@@ -138,7 +143,8 @@ func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 			}()
 
 			go func() {
-				listenerB, err := net.Listen("tcp", localB)
+				var err error
+				listenerB, err = net.Listen("tcp", localB)
 				if err != nil {
 					logger.Warn(
 						"Listen on %s error: %s",
