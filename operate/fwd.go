@@ -1,6 +1,7 @@
 package operate
 
 import (
+	"iox/crypto"
 	"iox/logger"
 	"iox/netio"
 	"iox/option"
@@ -91,8 +92,53 @@ func Local2Remote(local string, remote string, lenc bool, renc bool) {
 				)
 			}()
 		}
+
 	} else {
-		// TODO
+		localAddr, err := net.ResolveUDPAddr("udp", local)
+		if err != nil {
+			logger.Warn(
+				"Parse udp address %s error: %s",
+				local, err.Error(),
+			)
+			return
+		}
+		listener, err := net.ListenUDP("udp", localAddr)
+		if err != nil {
+			logger.Warn(
+				"Listen udp on %s error: %s",
+				local, err.Error(),
+			)
+			return
+		}
+
+		remoteAddr, err := net.ResolveUDPAddr("udp", remote)
+		if err != nil {
+			logger.Warn(
+				"Parse udp address %s error: %s",
+				local, err.Error(),
+			)
+			return
+		}
+		remoteConn, err := net.DialUDP("udp", nil, remoteAddr)
+		if err != nil {
+			logger.Warn(
+				"Dial remote udp %s error: %s",
+				local, err.Error(),
+			)
+			return
+		}
+
+		listenerCtx, err := netio.NewUDPCtx(listener, lenc, false)
+		if err != nil {
+			return
+		}
+		remoteCtx, err := netio.NewUDPCtx(remoteConn, renc, true)
+		if err != nil {
+			return
+		}
+
+		logger.Success("Forward udp between %s and %s", local, remote)
+		netio.ForwardUDP(listenerCtx, remoteCtx)
 	}
 }
 
@@ -222,12 +268,55 @@ func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 				)
 			}()
 		}
-
 	} else {
-		// TODO
+		localAddrA, err := net.ResolveUDPAddr("udp", localA)
+		if err != nil {
+			logger.Warn(
+				"Parse udp address %s error: %s",
+				localA, err.Error(),
+			)
+			return
+		}
+		listenerA, err := net.ListenUDP("udp", localAddrA)
+		if err != nil {
+			logger.Warn(
+				"Listen udp on %s error: %s",
+				localA, err.Error(),
+			)
+			return
+		}
+		localAddrB, err := net.ResolveUDPAddr("udp", localB)
+		if err != nil {
+			logger.Warn(
+				"Parse udp address %s error: %s",
+				localB, err.Error(),
+			)
+			return
+		}
+		listenerB, err := net.ListenUDP("udp", localAddrB)
+		if err != nil {
+			logger.Warn(
+				"Listen udp on %s error: %s",
+				localB, err.Error(),
+			)
+			return
+		}
+
+		listenerCtxA, err := netio.NewUDPCtx(listenerA, laenc, false)
+		if err != nil {
+			return
+		}
+		listenerCtxB, err := netio.NewUDPCtx(listenerB, lbenc, false)
+		if err != nil {
+			return
+		}
+
+		logger.Success("Forward udp between %s and %s", localA, localB)
+		netio.ForwardUnconnectedUDP(listenerCtxA, listenerCtxB)
 	}
 }
 
+// When you make a multistage connection, this function must be called last
 func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 	if option.PROTOCOL == "TCP" {
 		logger.Success("Forward between %s and %s", remoteA, remoteB)
@@ -336,6 +425,92 @@ func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 			}()
 		}
 	} else {
-		// TODO
+		remoteAddrA, err := net.ResolveUDPAddr("udp", remoteA)
+		if err != nil {
+			logger.Warn(
+				"Parse udp address %s error: %s",
+				remoteA, err.Error(),
+			)
+			return
+		}
+		remoteConnA, err := net.DialUDP("udp", nil, remoteAddrA)
+		if err != nil {
+			logger.Warn(
+				"Dial remote udp %s error: %s",
+				remoteA, err.Error(),
+			)
+			return
+		}
+		remoteAddrB, err := net.ResolveUDPAddr("udp", remoteB)
+		if err != nil {
+			logger.Warn(
+				"Parse udp address %s error: %s",
+				remoteB, err.Error(),
+			)
+			return
+		}
+		remoteConnB, err := net.DialUDP("udp", nil, remoteAddrB)
+		if err != nil {
+			logger.Warn(
+				"Dial remote udp %s error: %s",
+				remoteB, err.Error(),
+			)
+			return
+		}
+
+		remoteCtxA, err := netio.NewUDPCtx(remoteConnA, raenc, true)
+		if err != nil {
+			return
+		}
+		remoteCtxB, err := netio.NewUDPCtx(remoteConnB, rbenc, true)
+		if err != nil {
+			return
+		}
+
+		// I need to send init packet to register the remote address
+		// Even tough target is not `iox`, it doesn't matter
+		//
+		// There is a design fault here, and I need to consider
+		// the case where the FORWARD_WITHOUT_DEC flag
+		// is set but actually needs to be encrypted,
+		// otherwise there is no IV in the ciphertext,
+		// the opposite cannot process it
+		if raenc {
+			iv, err := crypto.RandomIV()
+			cipher, err := crypto.NewCipher(iv)
+			if err != nil {
+				return
+			}
+
+			b := make([]byte, 4, 20)
+			copy(b, netio.UDP_INIT_PACKET)
+
+			cipher.StreamXOR(b, b)
+			b = append(b, iv...)
+			remoteCtxA.Write(b)
+
+		} else {
+			remoteCtxA.Write(netio.UDP_INIT_PACKET)
+		}
+		if rbenc {
+			iv, err := crypto.RandomIV()
+			cipher, err := crypto.NewCipher(iv)
+			if err != nil {
+				return
+			}
+
+			b := make([]byte, 4, 20)
+			copy(b, netio.UDP_INIT_PACKET)
+
+			cipher.StreamXOR(b, b)
+			b = append(b, iv...)
+			remoteCtxB.Write(b)
+
+		} else {
+			remoteCtxB.Write(netio.UDP_INIT_PACKET)
+		}
+
+		logger.Success("Forward udp between %s and %s", remoteA, remoteB)
+		netio.ForwardUDP(remoteCtxA, remoteCtxB)
 	}
 }

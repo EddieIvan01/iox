@@ -38,11 +38,7 @@ func readAtLeast(r netio.Ctx, buf []byte, min int) (n int, err error) {
 
 	for n < min && err == nil {
 		var nn int
-		if r.IsEncrypted() {
-			nn, err = r.DecryptRead(buf[n:])
-		} else {
-			nn, err = r.Read(buf[n:])
-		}
+		nn, err = r.DecryptRead(buf[n:])
 		n += nn
 	}
 	if n >= min {
@@ -92,11 +88,8 @@ func handShake(conn netio.Ctx) (err error) {
 	   X'FF' NO ACCEPTABLE METHODS
 	*/
 	// send confirmation: version 5, no authentication required
-	if conn.IsEncrypted() {
-		_, err = conn.EncryptWrite([]byte{socksVer5, 0})
-	} else {
-		_, err = conn.Write([]byte{socksVer5, 0})
-	}
+	_, err = conn.EncryptWrite([]byte{socksVer5, 0})
+
 	return
 }
 
@@ -240,11 +233,7 @@ func pipeWhenClose(conn netio.Ctx, target string) {
 	rep[pindex] = byte((tcpAddr.Port >> 8) & 0xff)
 	rep[pindex+1] = byte(tcpAddr.Port & 0xff)
 
-	if conn.IsEncrypted() {
-		conn.EncryptWrite(rep[0 : pindex+2])
-	} else {
-		conn.Write(rep[0 : pindex+2])
-	}
+	conn.EncryptWrite(rep[0 : pindex+2])
 	// Transfer data
 
 	defer remoteConn.Close()

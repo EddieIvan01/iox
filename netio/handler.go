@@ -9,7 +9,6 @@ import (
 type Ctx interface {
 	DecryptRead(b []byte) (int, error)
 	EncryptWrite(b []byte) (int, error)
-	IsEncrypted() bool
 
 	net.Conn
 }
@@ -18,15 +17,15 @@ type TCPCtx struct {
 	net.Conn
 	encrypted bool
 
-	// Ensure synchronous
+	// Ensure stream cipher synchronous
 	encCipher *crypto.Cipher
 	decCipher *crypto.Cipher
 }
 
 func NewTCPCtx(conn net.Conn, encrypted bool) (*TCPCtx, error) {
-	if tc, ok := conn.(*net.TCPConn); ok {
-		tc.SetLinger(0)
-	}
+	// if tc, ok := conn.(*net.TCPConn); ok {
+	//     tc.SetLinger(0)
+	// }
 
 	encrypted = encrypted && !option.FORWARD_WITHOUT_DEC
 
@@ -35,7 +34,7 @@ func NewTCPCtx(conn net.Conn, encrypted bool) (*TCPCtx, error) {
 		encrypted: encrypted,
 	}
 
-	encCipher, decCipher, err := crypto.NewCipherPair(option.KEY)
+	encCipher, decCipher, err := crypto.NewCipherPair()
 	if err != nil {
 		return nil, err
 	}
@@ -54,24 +53,95 @@ func (c *TCPCtx) DecryptRead(b []byte) (int, error) {
 		return n, err
 	}
 
-	c.decCipher.StreamXOR(b[:n], b[:n])
+	if c.encrypted {
+		c.decCipher.StreamXOR(b[:n], b[:n])
+	}
 
 	return n, err
 }
 
 func (c *TCPCtx) EncryptWrite(b []byte) (int, error) {
-	c.encCipher.StreamXOR(b, b)
+	if c.encrypted {
+		c.encCipher.StreamXOR(b, b)
+	}
 	return c.Write(b)
 }
 
-func (c TCPCtx) IsEncrypted() bool {
-	return c.encrypted
+type UDPCtx struct {
+	*net.UDPConn
+	encrypted  bool
+	connected  bool
+	remoteAddr *net.UDPAddr
+
+	// sync.Mutex
 }
 
-type UDPCtx struct {
-	net.Conn
-	encrypted bool
+func NewUDPCtx(conn *net.UDPConn, encrypted bool, connected bool) (*UDPCtx, error) {
+	encrypted = encrypted && !option.FORWARD_WITHOUT_DEC
 
-	encCipher *crypto.Cipher
-	decCipher *crypto.Cipher
+	ctx := &UDPCtx{
+		UDPConn:   conn,
+		encrypted: encrypted,
+		connected: connected,
+	}
+
+	return ctx, nil
+}
+
+// Encryption for packet is different from stream
+func (c *UDPCtx) DecryptRead(b []byte) (int, error) {
+	var n int
+	var err error
+
+	if !c.connected {
+		var remoteAddr *net.UDPAddr
+		n, remoteAddr, err = c.ReadFromUDP(b)
+		if err != nil {
+			return n, err
+		}
+		c.remoteAddr = remoteAddr
+
+	} else {
+		n, err = c.Read(b)
+		if err != nil {
+			return n, err
+		}
+	}
+
+	if c.encrypted {
+		iv := b[n-0x10 : n]
+		b = b[:n-0x10]
+
+		cipher, err := crypto.NewCipher(iv)
+		if err != nil {
+			return 0, err
+		}
+
+		n -= 16
+		cipher.StreamXOR(b[:n], b[:n])
+	}
+
+	return n, err
+}
+
+func (c *UDPCtx) EncryptWrite(b []byte) (int, error) {
+	if c.encrypted {
+		iv, err := crypto.RandomIV()
+		cipher, err := crypto.NewCipher(iv)
+		if err != nil {
+			return 0, err
+		}
+
+		cipher.StreamXOR(b, b)
+		b = append(b, iv...)
+	}
+
+	if !c.connected {
+		return c.WriteTo(b, c.remoteAddr)
+	}
+	return c.Write(b)
+}
+
+func (c UDPCtx) IsRemoteAddrRegisted() bool {
+	return c.remoteAddr != nil
 }

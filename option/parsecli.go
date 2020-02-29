@@ -3,6 +3,7 @@ package option
 import (
 	"encoding/hex"
 	"errors"
+	"iox/crypto"
 	"strconv"
 )
 
@@ -13,6 +14,7 @@ var (
 	errUnrecognizedSubMode = errors.New("Malform args")
 	errNoSecretKey         = errors.New("Must provide secret key")
 	errNotANumber          = errors.New("Timeout must be a number")
+	errUDPMode             = errors.New("UDP mode only support fwd mode")
 )
 
 const (
@@ -85,13 +87,19 @@ func ParseCli(args []string) (
 			remote = append(remote, r)
 			ptr++
 
+		case "-u", "--udp":
+			PROTOCOL = "UDP"
+
 		case "-k", "--key":
-			KEY, err = hex.DecodeString(args[ptr+1])
+			var key []byte
+			key, err = hex.DecodeString(args[ptr+1])
 			if err != nil {
 				err = errHexDecodeError
 				return
 			}
+			crypto.ExpandKey(key)
 			ptr++
+
 		case "-t", "--timeout":
 			TIMEOUT, err = strconv.Atoi(args[ptr+1])
 			if err != nil {
@@ -140,7 +148,7 @@ func ParseCli(args []string) (
 		return
 	}
 
-	if KEY == nil {
+	if crypto.SECRET_KEY == nil {
 		for i, _ := range lenc {
 			if lenc[i] {
 				err = errNoSecretKey
@@ -154,6 +162,11 @@ func ParseCli(args []string) (
 				return
 			}
 		}
+	}
+
+	if PROTOCOL == "UDP" && mode == "proxy" {
+		err = errUDPMode
+		return
 	}
 
 	shouldFwdWithoutDec(lenc, renc)

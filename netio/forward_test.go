@@ -2,7 +2,8 @@ package netio
 
 import (
 	"bytes"
-	"fmt"
+	"iox/crypto"
+	"iox/option"
 	"net"
 	"testing"
 	"time"
@@ -12,17 +13,19 @@ type _buffer struct {
 	bytes.Buffer
 }
 
-func (b _buffer) IsEncrypted() bool                  { return false }
-func (b _buffer) EncryptWrite([]byte) (int, error)   { return 0, nil }
-func (b _buffer) DecryptRead([]byte) (int, error)    { return 0, nil }
-func (b _buffer) Close() error                       { return nil }
-func (b _buffer) LocalAddr() net.Addr                { return nil }
-func (b _buffer) RemoteAddr() net.Addr               { return nil }
-func (b _buffer) SetDeadline(t time.Time) error      { return nil }
-func (b _buffer) SetReadDeadline(t time.Time) error  { return nil }
-func (b _buffer) SetWriteDeadline(t time.Time) error { return nil }
+func (b *_buffer) EncryptWrite(bs []byte) (int, error) { return b.Write(bs) }
+func (b *_buffer) DecryptRead(bs []byte) (int, error)  { return b.Read(bs) }
+func (b _buffer) Close() error                         { return nil }
+func (b _buffer) LocalAddr() net.Addr                  { return nil }
+func (b _buffer) RemoteAddr() net.Addr                 { return nil }
+func (b _buffer) SetDeadline(t time.Time) error        { return nil }
+func (b _buffer) SetReadDeadline(t time.Time) error    { return nil }
+func (b _buffer) SetWriteDeadline(t time.Time) error   { return nil }
 
 func TestCipherCopy(t *testing.T) {
+	option.KEY = []byte("KEY")
+	crypto.ExpandKey(option.KEY)
+
 	listener, err := net.Listen("tcp", "127.0.0.1:9999")
 	if err != nil {
 		t.Error(err.Error())
@@ -58,17 +61,22 @@ func TestCipherCopy(t *testing.T) {
 	}
 
 	msg := "testing message."
-	connCtx.EncryptWrite([]byte(msg))
+	_, err = connCtx.EncryptWrite([]byte(msg))
+	if err != nil {
+		t.Error(err.Error())
+	}
 	conn.Close()
 
 	<-signal
 	if buf.String() != msg {
-		fmt.Println(buf.String())
+		t.Log(buf.Bytes())
 		t.Error("CipherCopy error")
 	}
 }
 
 func TestPipeForward(t *testing.T) {
+	option.KEY = []byte("KEY")
+	crypto.ExpandKey(option.KEY)
 	listenerA, err := net.Listen("tcp", "127.0.0.1:9999")
 	if err != nil {
 		t.Error(err.Error())
@@ -104,6 +112,8 @@ func TestPipeForward(t *testing.T) {
 
 		localCtxA.EncryptWrite([]byte(msgA))
 		localCtxA.DecryptRead(bufA)
+
+		signal <- struct{}{}
 	}()
 
 	go func() {
@@ -120,6 +130,8 @@ func TestPipeForward(t *testing.T) {
 
 		localCtxB.EncryptWrite([]byte(msgB))
 		localCtxB.DecryptRead(bufB)
+
+		signal <- struct{}{}
 	}()
 
 	go func() {
@@ -154,6 +166,9 @@ func TestPipeForward(t *testing.T) {
 	}
 
 	PipeForward(connCtxA, connCtxB)
+
+	<-signal
+	<-signal
 
 	if string(bufA[:len(msgB)]) != msgB || string(bufB[:len(msgA)]) != msgA {
 		t.Error("PipeForward error")

@@ -59,3 +59,34 @@ func TestTCPCtx(t *testing.T) {
 		t.Error("TCPCtx error")
 	}
 }
+
+func TestUDPConn(t *testing.T) {
+	addr, _ := net.ResolveUDPAddr("udp", ":9999")
+	l, _ := net.ListenUDP("udp", addr)
+	lCtx, _ := NewUDPCtx(l, true, false)
+
+	signal := make(chan struct{}, 0)
+
+	go func() {
+		addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:9999")
+		c, _ := net.DialUDP("udp", nil, addr)
+		cCtx, _ := NewUDPCtx(c, true, true)
+
+		cCtx.EncryptWrite([]byte("testing message."))
+
+		signal <- struct{}{}
+	}()
+
+	<-signal
+
+	buf := make([]byte, 32)
+	n, err := lCtx.DecryptRead(buf)
+	if err != nil {
+		t.Error(err.Error())
+	}
+
+	if string(buf[:n]) != "testing message." {
+		t.Log(buf[:n])
+		t.Error("UDPCtx Error")
+	}
+}

@@ -12,18 +12,18 @@ when I first used them, I can't remember these complicated parameters for a long
 
 Besides, I think the net programming logic could be optimized. 
 
-For example, while running `lcx -listen 8888 9999` command, client must connect to `:8888` first, then `:9999`, in `iox`, there's no limit to the order in two ports. And while running `lcx -slave 1.1.1.1 8888 1.1.1.1 9999` command, `lcx` will connect two hosts serially, but it's more efficient to connect in concurrently, as `iox` does.
+For example, while running `lcx -listen 8888 9999` command, client must connect to `:8888` first, then `:9999`, in `iox`, there's no limit to the order in two ports. And while running `lcx -slave 1.1.1.1 8888 1.1.1.1 9999` command, `lcx` will connect two hosts serially, but it's more efficient to connect in concurrent, as `iox` does.
 
 And what's more, `iox` provides traffic encryption feature. Actually, you can use `iox` as a simple ShadowSocks.
 
-Of course, because `iox` is written in Go, the static-link-program is a little big, raw program is 2.2MB (800KB for UPX compression)
+Of course, because `iox` is written in Go, the static-link-program is a little large, raw program is 2.2MB (800KB for UPX compression)
 
 ## Feature
 
 + traffic encryption (optional)
 + humanized CLI option
 + logic optimization
-+ UDP traffic forward (TODO)
++ UDP traffic forward
 
 ## Usage
 
@@ -139,6 +139,22 @@ Using `iox` as a simple ShadowSocks
 // sslocal
 ./iox fwd -l 1080 -r *VPS:9999 -k 000102
 ```
+
+#### UDP forward
+
+Only need to add CLI option `-u`
+
+```
+./iox fwd -l 53 -r *127.0.0.1:8888 -k 000102 -u
+./iox fwd -l *8888 -l *9999 -k 000102 -u
+./iox fwd -r *127.0.0.1:9999 -r 8.8.8.8:53 -k 000102 -u
+```
+
+**NOTICE: When you make a multistage connection, the `Remote2Remote-UDP-mode` must be started last, which is the No.3 command in above example**
+
+UDP forwarding may have behavior that is not as you expected, because there are many differences between stream & packet.
+
+You can find why in the source code, if you have any ideas, PR / issue are welcomed
 
 ## License
 

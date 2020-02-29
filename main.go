@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-const VERSION = "0.1.1"
+const VERSION = "0.2"
 
 func Usage() {
 	fmt.Printf(
@@ -21,6 +21,8 @@ func Usage() {
 			"      remote host to connect, HOST can be IP or Domain. `*` means encrypted socket\n"+
 			"  -k HEX\n"+
 			"      hexadecimal format key, be used to generate AES Key and IV\n"+
+			"  -u\n"+
+			"      udp forward mode\n"+
 			"  -t TIMEOUT\n"+
 			"      set connection timeout(millisecond), default is 5000\n"+
 			"  -v\n"+
