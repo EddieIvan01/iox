@@ -34,12 +34,12 @@ func NewTCPCtx(conn net.Conn, encrypted bool) (*TCPCtx, error) {
 		encrypted: encrypted,
 	}
 
-	encCipher, decCipher, err := crypto.NewCipherPair()
-	if err != nil {
-		return nil, err
-	}
-
 	if encrypted {
+		encCipher, decCipher, err := crypto.NewCipherPair()
+		if err != nil {
+			return nil, err
+		}
+
 		ctx.encCipher = encCipher
 		ctx.decCipher = decCipher
 	}
