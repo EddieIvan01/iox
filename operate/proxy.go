@@ -59,6 +59,33 @@ func ProxyRemote(remote string, encrypted bool) {
 
 	endSignal := make(chan struct{})
 
+	// handle ctrl+C and send heartbeat packets periodically
+	{
+		sigs := make(chan os.Signal)
+		signal.Notify(sigs, os.Interrupt)
+		go func() {
+			<-sigs
+			masterConn.Write(serialize(Protocol{
+				CMD: CTL_CLEANUP,
+				N:   0,
+			}))
+			logger.Success("Recv Ctrl+C, exit now")
+			os.Exit(0)
+		}()
+
+		// no need for mutex-lock here
+		ticker := time.NewTicker(time.Second * option.HEARTBEAT_FREQUENCY)
+		go func() {
+			for {
+				<-ticker.C
+				masterConn.Write(serialize(Protocol{
+					CMD: CTL_HEARTBEAT,
+					N:   0,
+				}))
+			}
+		}()
+	}
+
 	// handle master conn
 	go func() {
 		defer masterConn.Close()
@@ -87,6 +114,7 @@ func ProxyRemote(remote string, encrypted bool) {
 	for {
 		select {
 		case <-endSignal:
+			logger.Success("Recv exit signal from remote, exit now")
 			return
 		case n := <-connectRequest:
 			for n > 0 {
@@ -147,6 +175,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 				CMD: CTL_CLEANUP,
 				N:   0,
 			}))
+			logger.Success("Recv Ctrl+C, exit now")
 			os.Exit(0)
 		}()
 	}
@@ -155,6 +184,29 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 	defer close(localConnBuffer)
 
 	logger.Success("Forward socks5 server to %s", local)
+
+	// handle masterConn read
+	go func() {
+		for {
+			pb, err := readUntilEnd(masterConn)
+			if err != nil {
+				continue
+			}
+
+			p, err := unserialize(pb)
+			if err != nil {
+				continue
+			}
+
+			switch p.CMD {
+			case CTL_CLEANUP:
+				logger.Success("Recv exit signal from remote, exit now")
+				os.Exit(0)
+			case CTL_HEARTBEAT:
+				continue
+			}
+		}
+	}()
 
 	// handle local connection
 	go func() {

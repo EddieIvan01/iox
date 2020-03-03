@@ -16,7 +16,7 @@ For example, while running `lcx -listen 8888 9999` command, client must connect 
 
 And what's more, `iox` provides traffic encryption feature. Actually, you can use `iox` as a simple ShadowSocks.
 
-Of course, because `iox` is written in Go, the static-link-program is a little large, raw program is 2.2MB (800KB for UPX compression)
+Of course, because `iox` is written in Go, the static-link-program is a little large, raw program is 2.2MB (800KB after UPX compression)
 
 ## Feature
 
@@ -29,7 +29,7 @@ Of course, because `iox` is written in Go, the static-link-program is a little l
 
 You can see, all params are uniform. `-l/--local` means listen on a local port; `-r/--remote` means connect to remote host
 
-#### Two mode
+### Two mode
 
 **fwd**：
 
@@ -77,7 +77,7 @@ for ew:
 
 Start Socks5 server on be-controlled host, then forward to internet VPS
 
-VPS forward 0.0.0.0:9999 to 0.0.0.0:1080
+VPS forward `0.0.0.0:9999` to `0.0.0.0:1080`
 
 You must use in pair, because it contains a simple protocol to control connecting back
 
@@ -102,7 +102,7 @@ $ proxychains rdesktop 192.168.0.100:3389
 
 ***
 
-#### enable encryption
+### enable encryption
 
 For example, we forward 3389 port in intranet to our VPS
 
@@ -140,7 +140,7 @@ Using `iox` as a simple ShadowSocks
 ./iox fwd -l 1080 -r *VPS:9999 -k 000102
 ```
 
-#### UDP forward
+### UDP forward
 
 Only need to add CLI option `-u`
 
@@ -152,9 +152,9 @@ Only need to add CLI option `-u`
 
 **NOTICE: When you make a multistage connection, the `Remote2Remote-UDP-mode` must be started last, which is the No.3 command in above example**
 
-UDP forwarding may have behavior that is not as you expected, because there are many differences between stream & packet.
+UDP forwarding may have behavior that is not as you expected. Actually, on GitHub now, there are only examples of forwarding a local listener to a remote host, so I can only implement them with my understanding
 
-You can find why in the source code, if you have any ideas, PR / issue are welcomed
+You can find why in the source code. If you have any ideas, PR / issue are welcomed
 
 ## License
 

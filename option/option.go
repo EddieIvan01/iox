@@ -5,16 +5,14 @@ const (
 
 	CONN_BUFFER_SIZE = 0x20
 
-	// If buffer size is not large enough,
-	// UDPConn.Read will drop the packet data
-	// exceeds buffer size, it's not like
-	// stream protocol, so I need to allocate
-	// a MAX_SIZE buffer
-	UDP_PACKET_MAX_SIZE = 0x10000
+	// UDP protocol's max capacity
+	UDP_PACKET_MAX_SIZE = 0xFFFF - 28
 
 	UDP_PACKET_CHANNEL_SIZE = 0x400
 
 	MAX_UDP_FWD_WORKER = 0x10
+
+	HEARTBEAT_FREQUENCY = 30
 )
 
 var (

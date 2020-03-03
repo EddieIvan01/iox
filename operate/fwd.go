@@ -316,7 +316,7 @@ func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 	}
 }
 
-// When you make a multistage connection, this function must be called last
+// When you make a multistage UDP connection, this function must be called last
 func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 	if option.PROTOCOL == "TCP" {
 		logger.Success("Forward between %s and %s", remoteA, remoteB)
@@ -345,6 +345,7 @@ func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 							"Connect remote %s error, retrying",
 							remoteA,
 						)
+						time.Sleep(1500 * time.Millisecond)
 						continue
 					}
 
@@ -372,6 +373,7 @@ func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 							"Connect remote %s error, retrying",
 							remoteB,
 						)
+						time.Sleep(1500 * time.Millisecond)
 						continue
 					}
 					break

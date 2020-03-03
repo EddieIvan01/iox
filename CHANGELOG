@@ -1,3 +1,8 @@
+v0.2.1:
+    1. Add heartbeat for remote-proxy's ctl-connection, to prevent
+       the NAT device drops mapping rules
+    2. Reduce `Remote2Remote` function's retry frequency
+
 v0.2:
     1. Add UDP forward mode, CLI option: `-u`
 

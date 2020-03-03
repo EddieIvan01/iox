@@ -44,6 +44,8 @@ func NewCipherPair() (*Cipher, *Cipher, error) {
 		return nil, nil, err
 	}
 
+	// IV could be reused
+	// Because NewCTR function will clone a new []byte
 	return &Cipher{cipher.NewCTR(blockA, IV)},
 		&Cipher{cipher.NewCTR(blockB, IV)},
 		nil
