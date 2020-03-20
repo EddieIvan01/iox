@@ -143,6 +143,7 @@ func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 				if !(nr == 4 &&
 					buffer[0] == 0xCC && buffer[1] == 0xDD &&
 					buffer[2] == 0xEE && buffer[3] == 0xFF) {
+					logger.Info(" <== [%d bytes] ==", nr)
 					packetChannelB <- buffer[:nr]
 				}
 			}
@@ -163,6 +164,7 @@ func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 				if !(nr == 4 &&
 					buffer[0] == 0xCC && buffer[1] == 0xDD &&
 					buffer[2] == 0xEE && buffer[3] == 0xFF) {
+					logger.Info(" <== [%d bytes] ==", nr)
 					packetChannelA <- buffer[:nr]
 				}
 			}
@@ -172,18 +174,26 @@ func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 	// A write
 	go func() {
 		<-addrRegistedSignalA
+		var n int
 		for {
 			packet := <-packetChannelA
-			ctxA.EncryptWrite(packet)
+			n, _ = ctxA.EncryptWrite(packet)
+			if n > 0 {
+				logger.Info(" == [%d bytes] ==>", n)
+			}
 		}
 	}()
 
 	// B write
 	go func() {
 		<-addrRegistedSignalB
+		var n int
 		for {
 			packet := <-packetChannelB
-			ctxB.EncryptWrite(packet)
+			n, _ = ctxB.EncryptWrite(packet)
+			if n > 0 {
+				logger.Info(" == [%d bytes] ==>", n)
+			}
 		}
 	}()
 

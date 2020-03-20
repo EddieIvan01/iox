@@ -14,7 +14,9 @@ Besides, I think the net programming logic could be optimized.
 
 For example, while running `lcx -listen 8888 9999` command, client must connect to `:8888` first, then `:9999`, in `iox`, there's no limit to the order in two ports. And while running `lcx -slave 1.1.1.1 8888 1.1.1.1 9999` command, `lcx` will connect two hosts serially, but it's more efficient to connect in concurrent, as `iox` does.
 
-And what's more, `iox` provides traffic encryption feature. Actually, you can use `iox` as a simple ShadowSocks.
+What's more, `iox` provides traffic encryption feature. Actually, you can use `iox` as a simple ShadowSocks. 
+
+And `iox` also provides UDP traffic forward.
 
 Of course, because `iox` is written in Go, the static-link-program is a little large, raw program is 2.2MB (800KB after UPX compression)
 
@@ -123,7 +125,7 @@ So, the `*` should be used in pairs
 ./iox fwd -l 1000 -r *127.0.0.1:1001 -k 000102
 ./iox fwd -l *1001 -r *127.0.0.1:1002 -k 000102
 ./iox fwd -l *1002 -r *127.0.0.1:1003 -k 000102
-./iox proxy -l *1003
+./iox proxy -l *1003 -k 000102
 
 
 $ curl google.com -x socks5://127.0.0.1:1000
