@@ -1,23 +1,60 @@
 v0.3:
-    1. Replace AES-CTR with Xchacha20. Because in Golang,
-       only AES-GCM has assembly-speed-up, but AES-GCM in
-       Golang implementation is not a stream operator, and
-       need more alloc overhead.
-       From the results of my test:
-           amd64: Xchacha20 is 4X faster than AES-CTR
-           i386: Xchacha20 is 3X faster than AES-CTR (8X slower than amd64)
+    1. Replace AES-CTR with XChaCha20.
+       Because in Golang, only AES-GCM on AMD64/ARM64 has special assembly-speed-up
+       optimization. In summary, in Golang, except for the AES-GCM on AMD64/ARM64 architecture, 
+       all AES-XXX else are slower than ChaCha20 (look at the benchmark below).
+       Also, AES-GCM in Golang's implementation is not a stream operator, and needs
+       2X alloc overhead, so it doesn't fit.
+       Considering all, ChaCha20 is the better choice.
+       The benchmark:
+            goos: windows
+            goarch: amd64
+            BenchmarkAESGCMSeal1K-4          3880944               308 ns/op        3326.14 MB/s
+            BenchmarkAESGCMOpen1K-4          4092999               290 ns/op        3525.53 MB/s
+            BenchmarkAESGCMSeal8K-4           600762              1849 ns/op        4429.61 MB/s
+            BenchmarkAESGCMOpen8K-4           632307              1828 ns/op        4481.21 MB/s
+            BenchmarkAESGCMSeal32K-4          164750              7034 ns/op        4658.32 MB/s
+            BenchmarkAESGCMOpen32K-4          169389              6871 ns/op        4768.88 MB/s
+            BenchmarkAESCTR1K-4               752043              1408 ns/op         723.51 MB/s
+            BenchmarkAESCTR8K-4               105513             11078 ns/op         739.05 MB/s
+            BenchmarkAESCTR32K-4               26914             44505 ns/op         736.17 MB/s
+            BenchmarkChacha201K-4            1000000              1083 ns/op         940.83 MB/s
+            BenchmarkChacha208K-4             300565              3942 ns/op        2076.80 MB/s
+            BenchmarkChacha2032K-4             85921             13720 ns/op        2387.96 MB/s
+            
+            goos: windows
+            goarch: 386
+            BenchmarkAESGCMSeal1K-4            56220             21181 ns/op          48.35 MB/s
+            BenchmarkAESGCMOpen1K-4            56224             21535 ns/op          47.55 MB/s
+            BenchmarkAESGCMSeal8K-4             6332            166170 ns/op          49.30 MB/s
+            BenchmarkAESGCMOpen8K-4             7063            167895 ns/op          48.79 MB/s
+            BenchmarkAESGCMSeal32K-4            1693            667421 ns/op          49.10 MB/s
+            BenchmarkAESGCMOpen32K-4            1718            660650 ns/op          49.60 MB/s
+            BenchmarkAESCTR1K-4               132240              9035 ns/op         112.78 MB/s
+            BenchmarkAESCTR8K-4                16527             72232 ns/op         113.34 MB/s
+            BenchmarkAESCTR32K-4                4009            288576 ns/op         113.53 MB/s
+            BenchmarkChacha201K-4             343777              3426 ns/op         297.41 MB/s
+            BenchmarkChacha208K-4              48712             24447 ns/op         334.89 MB/s
+            BenchmarkChacha2032K-4             12442             95950 ns/op         341.46 MB/s
+            
     2. Increse the TCP_BUFFER_SIZE to 0x8000
+    
     3. Fix a bug in UDP forward
 
+    
 v0.2.1:
     1. Add heartbeat for remote-proxy's ctl-connection, to prevent
        the NAT device drops mapping rules
+       
     2. Reduce `Remote2Remote` function's retry frequency
 
+    
 v0.2:
     1. Add UDP forward mode, CLI option: `-u`
 
+    
 v0.1.1: 
     1. Logic optimization, while both two connections are encrypted,
        traffic will be forwarded without additional encryption and decryption
+       
     2. Made some little improvements

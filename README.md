@@ -104,7 +104,7 @@ $ proxychains rdesktop 192.168.0.100:3389
 
 ***
 
-### enable encryption
+### Enable encryption
 
 For example, we forward 3389 port in intranet to our VPS
 
@@ -117,7 +117,7 @@ For example, we forward 3389 port in intranet to our VPS
 ./iox fwd -l *8888 -l 33890 -k 656565
 ```
 
-It's easy to understand: traffic between be-controlled host and our VPS:8888 will be encrypted, the pre-shared secret key is 'AAA', `iox` will use it to generate seed key and IV, then encrypt with Xchacha20 (replace AES-CTR with Xchacha20 in v0.3 version)
+It's easy to understand: traffic between be-controlled host and our VPS:8888 will be encrypted, the pre-shared secret key is 'AAA', `iox` will use it to generate seed key and nonce **(Normally, nonce shouldn't be reused. But consider that iox's encryption is only for bypassing IDS, in order not to allocate extra space, the TCP stream encryption will reuse the nonce)**, then encrypt with Xchacha20 (replace AES-CTR with Xchacha20 in v0.3 version)
 
 So, the `*` should be used in pairs
 
@@ -131,7 +131,7 @@ So, the `*` should be used in pairs
 $ curl google.com -x socks5://127.0.0.1:1000
 ```
 
-Using `iox` as a simple ShadowSocks
+Using `iox` as a simple ShadowSocks 
 
 ```
 // ssserver
