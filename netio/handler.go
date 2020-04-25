@@ -109,15 +109,19 @@ func (c *UDPCtx) DecryptRead(b []byte) (int, error) {
 	}
 
 	if c.encrypted {
-		iv := b[n-0x10 : n]
-		b = b[:n-0x10]
+		// no nonce, skip this packet
+		if len(b) < 0x18 {
+			return 0, nil
+		}
+		nonce := b[n-0x18 : n]
+		b = b[:n-0x18]
 
-		cipher, err := crypto.NewCipher(iv)
+		cipher, err := crypto.NewCipher(nonce)
 		if err != nil {
 			return 0, err
 		}
 
-		n -= 16
+		n -= 0x18
 		cipher.StreamXOR(b[:n], b[:n])
 	}
 
@@ -126,7 +130,7 @@ func (c *UDPCtx) DecryptRead(b []byte) (int, error) {
 
 func (c *UDPCtx) EncryptWrite(b []byte) (int, error) {
 	if c.encrypted {
-		iv, err := crypto.RandomIV()
+		iv, err := crypto.RandomNonce()
 		cipher, err := crypto.NewCipher(iv)
 		if err != nil {
 			return 0, err

@@ -1,3 +1,14 @@
+v0.3:
+    1. Replace AES-CTR with Xchacha20. Because in Golang,
+       only AES-GCM has assembly-speed-up, but AES-GCM in
+       Golang implementation is not a stream operator, and
+       need more alloc overhead.
+       From the results of my test:
+           amd64: Xchacha20 is 4X faster than AES-CTR
+           i386: Xchacha20 is 3X faster than AES-CTR (8X slower than amd64)
+    2. Increse the TCP_BUFFER_SIZE to 0x8000
+    3. Fix a bug in UDP forward
+
 v0.2.1:
     1. Add heartbeat for remote-proxy's ctl-connection, to prevent
        the NAT device drops mapping rules
@@ -9,5 +20,4 @@ v0.2:
 v0.1.1: 
     1. Logic optimization, while both two connections are encrypted,
        traffic will be forwarded without additional encryption and decryption
-
     2. Made some little improvements

@@ -478,7 +478,7 @@ func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 		// otherwise there is no IV in the ciphertext,
 		// the opposite cannot process it
 		if raenc {
-			iv, err := crypto.RandomIV()
+			iv, err := crypto.RandomNonce()
 			cipher, err := crypto.NewCipher(iv)
 			if err != nil {
 				return
@@ -495,7 +495,7 @@ func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 			remoteCtxA.Write(netio.UDP_INIT_PACKET)
 		}
 		if rbenc {
-			iv, err := crypto.RandomIV()
+			iv, err := crypto.RandomNonce()
 			cipher, err := crypto.NewCipher(iv)
 			if err != nil {
 				return

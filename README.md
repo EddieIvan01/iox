@@ -117,7 +117,7 @@ For example, we forward 3389 port in intranet to our VPS
 ./iox fwd -l *8888 -l 33890 -k 656565
 ```
 
-It's easy to understand: traffic between be-controlled host and our VPS:8888 will be encrypted, the pre-shared secret key is 'AAA', `iox` will use it to generate seed key and IV, then encrypt with AES-CTR
+It's easy to understand: traffic between be-controlled host and our VPS:8888 will be encrypted, the pre-shared secret key is 'AAA', `iox` will use it to generate seed key and IV, then encrypt with Xchacha20 (replace AES-CTR with Xchacha20 in v0.3 version)
 
 So, the `*` should be used in pairs
 

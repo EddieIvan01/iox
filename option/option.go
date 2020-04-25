@@ -1,7 +1,7 @@
 package option
 
 const (
-	TCP_BUFFER_SIZE = 0x4000
+	TCP_BUFFER_SIZE = 0x8000
 
 	CONN_BUFFER_SIZE = 0x20
 

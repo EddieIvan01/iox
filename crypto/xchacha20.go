@@ -1,19 +1,21 @@
+/*
+ Third-party chacha20 lib from https://github.com/Yawning/chacha20
+*/
 package crypto
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
+	"iox/crypto/chacha20"
 )
 
 var (
 	SECRET_KEY []byte
-	IV         []byte
+	NONCE      []byte
 )
 
 func expand32(key []byte) ([]byte, []byte) {
 	if len(key) >= 0x20 {
-		return key[:0x10], key[0x10:0x20]
+		return key[:0x20], append(key[:0xC], key[len(key)-0xC:]...)
 	}
 
 	var c byte = 0x20 - byte(len(key)&0x1F)
@@ -21,38 +23,32 @@ func expand32(key []byte) ([]byte, []byte) {
 	for i := 0; i < int(c); i++ {
 		key = append(key, c)
 	}
-	return key[:0x10], key[0x10:0x20]
+	return key[:0x20], append(key[:0xC], key[len(key)-0xC:]...)
 }
 
 func ExpandKey(key []byte) {
-	SECRET_KEY, IV = expand32(key)
+	SECRET_KEY, NONCE = expand32(key)
 }
 
 type Cipher struct {
-	c cipher.Stream
+	c *chacha20.Cipher
 }
 
-// AES-128-CTR
 func NewCipherPair() (*Cipher, *Cipher, error) {
-	blockA, err := aes.NewCipher(SECRET_KEY)
+	ccA, err := chacha20.New(SECRET_KEY, NONCE)
+	if err != nil {
+		return nil, nil, err
+	}
+	ccB, err := chacha20.New(SECRET_KEY, NONCE)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	blockB, err := aes.NewCipher(SECRET_KEY)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// IV could be reused
-	// Because NewCTR function will clone a new []byte
-	return &Cipher{cipher.NewCTR(blockA, IV)},
-		&Cipher{cipher.NewCTR(blockB, IV)},
-		nil
+	return &Cipher{c: ccA}, &Cipher{c: ccB}, nil
 }
 
-func RandomIV() ([]byte, error) {
-	iv := make([]byte, 0x10)
+func RandomNonce() ([]byte, error) {
+	iv := make([]byte, 0x18)
 	_, err := rand.Read(iv)
 	if err != nil {
 		return nil, err
@@ -60,14 +56,14 @@ func RandomIV() ([]byte, error) {
 	return iv, nil
 }
 
-func NewCipher(iv []byte) (*Cipher, error) {
-	block, err := aes.NewCipher(SECRET_KEY)
+func NewCipher(nonce []byte) (*Cipher, error) {
+	cc, err := chacha20.New(SECRET_KEY, nonce)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Cipher{
-		c: cipher.NewCTR(block, iv),
+		c: cc,
 	}, nil
 }
 
