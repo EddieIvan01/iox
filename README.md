@@ -4,7 +4,7 @@ English | [中文](https://github.com/EddieIvan01/iox/tree/master/docs/README_CN
 
 Tool for port forward & intranet proxy, just like `lcx`/`ew`, but better
 
-## Why write?
+# Why write?
 
 `lcx` and `ew` are awesome, but can be improved.
 
@@ -20,68 +20,52 @@ And `iox` also provides UDP traffic forward.
 
 Of course, because `iox` is written in Go, the static-link-program is a little large, raw program is 2.2MB (800KB after UPX compression)
 
-## Feature
+# Features
 
-+ traffic encryption (optional)
-+ humanized CLI option
-+ logic optimization
++ Traffic encryption (optional)
++ Humanized CLI option
++ Logic optimization
 + UDP traffic forward
 
-## Usage
+# Usage
 
 You can see, all params are uniform. `-l/--local` means listen on a local port; `-r/--remote` means connect to remote host
 
-### Two mode
+## Working mode
 
-**fwd**：
+### fwd
 
 Listen on `0.0.0.0:8888` and `0.0.0.0:9999`, forward traffic between 2 connections
 
 ```
 ./iox fwd -l 8888 -l 9999
-
-
-for lcx:
-./lcx -listen 8888 9999
 ```
 
 Listen on `0.0.0.0:8888`, forward traffic to `1.1.1.1:9999`
 
 ```
 ./iox fwd -l 8888 -r 1.1.1.1:9999
-
-
-for lcx:
-./lcx -tran 8888 1.1.1.1 9999
 ```
 
 Connect `1.1.1.1:8888` and `1.1.1.1:9999`, forward between 2 connection
 
 ```
 ./iox fwd -r 1.1.1.1:8888 -r 1.1.1.1:9999
-
-
-for lcx:
-./lcx -slave 1.1.1.1 8888 1.1.1.1 9999
 ```
 
-**proxy**
+### proxy
 
 Start Socks5 server on `0.0.0.0:1080`
 
 ```
 ./iox proxy -l 1080
-
-
-for ew:
-./ew -s ssocksd -l 1080
 ```
 
 Start Socks5 server on be-controlled host, then forward to internet VPS
 
 VPS forward `0.0.0.0:9999` to `0.0.0.0:1080`
 
-You must use in pair, because it contains a simple protocol to control connecting back
+You must use in a pair, because it contains a simple protocol to control connecting back
 
 ```
 ./iox proxy -r 1.1.1.1:9999
@@ -104,9 +88,9 @@ $ proxychains rdesktop 192.168.0.100:3389
 
 ***
 
-### Enable encryption
+## Enable encryption
 
-For example, we forward 3389 port in intranet to our VPS
+For example, we forward 3389 port in the intranet to our VPS
 
 ```
 // be-controller host
@@ -142,7 +126,7 @@ Using `iox` as a simple ShadowSocks
 ./iox fwd -l 1080 -r *VPS:9999 -k 000102
 ```
 
-### UDP forward
+## UDP forward
 
 Only need to add CLI option `-u`
 
@@ -158,7 +142,7 @@ UDP forwarding may have behavior that is not as you expected. Actually, on GitHu
 
 You can find why in the source code. If you have any ideas, PR / issue are welcomed
 
-## License
+# License
 
 The MIT license
 

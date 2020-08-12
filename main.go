@@ -20,7 +20,7 @@ func Usage() {
 			"  -r [*]HOST:PORT\n"+
 			"      remote host to connect, HOST can be IP or Domain. `*` means encrypted socket\n"+
 			"  -k HEX\n"+
-			"      hexadecimal format key, be used to generate AES Key and IV\n"+
+			"      hexadecimal format key, be used to generate Key and IV\n"+
 			"  -u\n"+
 			"      udp forward mode\n"+
 			"  -t TIMEOUT\n"+

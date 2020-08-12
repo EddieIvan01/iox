@@ -40,7 +40,7 @@ func serialize(p Protocol) []byte {
 
 func unserialize(b []byte) (*Protocol, error) {
 	if len(b) < 2 {
-		return nil, errors.New("Protocol data too short")
+		return nil, errors.New("Protocol data is too short")
 	}
 
 	p := &Protocol{

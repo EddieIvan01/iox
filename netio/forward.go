@@ -118,7 +118,7 @@ var UDP_INIT_PACKET = []byte{
 
 // Each socket only writes the packet to the address
 // which last sent packet to it recently,
-// instead of boardcasting to all the address.
+// instead of broadcasting to all the address.
 // I think it is as expected
 func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 	addrRegistedA := false

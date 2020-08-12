@@ -8,12 +8,12 @@ import (
 )
 
 var (
-	errUnrecognizedMode    = errors.New("Unrecognized mode")
-	errHexDecodeError      = errors.New("Not hexadecimal string")
+	errUnrecognizedMode    = errors.New("Unrecognized mode. You should choose a working mode in [fwd / proxy]")
+	errHexDecodeError      = errors.New("`-k` param doesn't special a hexadecimal string")
 	PrintUsage             = errors.New("")
-	errUnrecognizedSubMode = errors.New("Malform args")
-	errNoSecretKey         = errors.New("Must provide secret key")
-	errNotANumber          = errors.New("Timeout must be a number")
+	errUnrecognizedSubMode = errors.New("Malformed args. The number of `-l` and `-n` is wrong")
+	errNoSecretKey         = errors.New("Encryption enabled, `-k` param must special a KEY")
+	errNotANumber          = errors.New("Timeout param must be a number")
 	errUDPMode             = errors.New("UDP mode only support fwd mode")
 )
 

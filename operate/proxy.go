@@ -218,22 +218,9 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 
 			localConnBuffer <- localConn
 
-			// to speed up
-			// don't need to calculate precisly
-			var n uint8
-			l := len(localConnBuffer)
-			switch {
-			case l > MAX_CONNECTION/0x40:
-				n = 2
-			case l > MAX_CONNECTION/0x20:
-				n = 3
-			default:
-				n = 1
-			}
-
 			masterConn.Write(serialize(Protocol{
 				CMD: CTL_CONNECT_ME,
-				N:   n,
+				N:   1,
 			}))
 		}
 	}()
