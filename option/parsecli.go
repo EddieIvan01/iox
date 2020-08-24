@@ -8,11 +8,11 @@ import (
 )
 
 var (
-	errUnrecognizedMode    = errors.New("Unrecognized mode. You should choose a working mode in [fwd / proxy]")
-	errHexDecodeError      = errors.New("`-k` param doesn't special a hexadecimal string")
+	errUnrecognizedMode    = errors.New("Unrecognized mode. Must choose a working mode in [fwd/proxy]")
+	errHexDecodeError      = errors.New("KEY must be a hexadecimal string")
 	PrintUsage             = errors.New("")
-	errUnrecognizedSubMode = errors.New("Malformed args. The number of `-l` and `-n` is wrong")
-	errNoSecretKey         = errors.New("Encryption enabled, `-k` param must special a KEY")
+	errUnrecognizedSubMode = errors.New("Malformed args. Incorrect number of `-l/-r` params")
+	errNoSecretKey         = errors.New("Encryption enabled, must special a KEY by `-k` param")
 	errNotANumber          = errors.New("Timeout param must be a number")
 	errUDPMode             = errors.New("UDP mode only support fwd mode")
 )

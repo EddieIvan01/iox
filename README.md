@@ -8,13 +8,13 @@ Tool for port forward & intranet proxy, just like `lcx`/`ew`, but better
 
 `lcx` and `ew` are awesome, but can be improved.
 
-when I first used them, I can't remember these complicated parameters for a long time, such as `tran, slave, rcsocks, sssocks...`. The work mode is clear, why do they design parameters like this(especially `ew`'s `-l -d -e -f -g -h`)
+When I first used them, I can't remember these complicated parameters for a long time, such as `tran, slave, rcsocks, sssocks...`. The work mode is clear, why do they design parameters like this(especially `ew`'s `-l -d -e -f -g -h`)
 
 Besides, I think the net programming logic could be optimized. 
 
 For example, while running `lcx -listen 8888 9999` command, client must connect to `:8888` first, then `:9999`, in `iox`, there's no limit to the order in two ports. And while running `lcx -slave 1.1.1.1 8888 1.1.1.1 9999` command, `lcx` will connect two hosts serially, but it's more efficient to connect in concurrent, as `iox` does.
 
-What's more, `iox` provides traffic encryption feature. Actually, you can use `iox` as a simple ShadowSocks. 
+What's more, `iox` provides traffic encryption feature (it's useful when there is a IDS on target). Actually, you can use `iox` as a simple ShadowSocks. 
 
 And `iox` also provides UDP traffic forward.
 

@@ -11,14 +11,10 @@ import (
 	"time"
 )
 
-// local is :port
 func ProxyLocal(local string, encrypted bool) {
 	listener, err := net.Listen("tcp", local)
 	if err != nil {
-		logger.Warn(
-			"Socks5 listen on %s error: %s",
-			local, err.Error(),
-		)
+		logger.Warn("Socks5 listen on %s error: %s", local, err.Error())
 		return
 	}
 
@@ -27,10 +23,7 @@ func ProxyLocal(local string, encrypted bool) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			logger.Warn(
-				"Socks5 handle local connect error: %s",
-				err.Error(),
-			)
+			logger.Warn("Socks5 handle local connect error: %s", err.Error())
 			continue
 		}
 
@@ -46,7 +39,6 @@ func ProxyLocal(local string, encrypted bool) {
 	}
 }
 
-// remote is domain:port or ip:port
 func ProxyRemote(remote string, encrypted bool) {
 	masterConn, err := clientHandshake(remote)
 	if err != nil {
@@ -65,7 +57,7 @@ func ProxyRemote(remote string, encrypted bool) {
 		signal.Notify(sigs, os.Interrupt)
 		go func() {
 			<-sigs
-			masterConn.Write(serialize(Protocol{
+			masterConn.Write(marshal(Protocol{
 				CMD: CTL_CLEANUP,
 				N:   0,
 			}))
@@ -73,12 +65,11 @@ func ProxyRemote(remote string, encrypted bool) {
 			os.Exit(0)
 		}()
 
-		// no need for mutex-lock here
 		ticker := time.NewTicker(time.Second * option.HEARTBEAT_FREQUENCY)
 		go func() {
 			for {
 				<-ticker.C
-				masterConn.Write(serialize(Protocol{
+				masterConn.Write(marshal(Protocol{
 					CMD: CTL_HEARTBEAT,
 					N:   0,
 				}))
@@ -95,7 +86,7 @@ func ProxyRemote(remote string, encrypted bool) {
 				continue
 			}
 
-			p, err := unserialize(pb)
+			p, err := unmarshal(pb)
 			if err != nil {
 				continue
 			}
@@ -120,8 +111,7 @@ func ProxyRemote(remote string, encrypted bool) {
 			for n > 0 {
 				go func() {
 					conn, err := net.DialTimeout(
-						"tcp",
-						remote,
+						"tcp", remote,
 						time.Duration(option.TIMEOUT)*time.Millisecond,
 					)
 					if err != nil {
@@ -150,7 +140,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 	}
 	defer masterListener.Close()
 
-	logger.Info("Listent on %s for remote socks5 server", master)
+	logger.Info("Listen on %s for remote socks5 server", master)
 
 	localListener, err := net.Listen("tcp", local)
 	if err != nil {
@@ -159,7 +149,6 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 	}
 	defer localListener.Close()
 
-	// HANDSHAKE:
 	masterConn := serverHandshake(masterListener)
 	defer func() {
 		masterConn.Close()
@@ -171,7 +160,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 		signal.Notify(sigs, os.Interrupt)
 		go func() {
 			<-sigs
-			masterConn.Write(serialize(Protocol{
+			masterConn.Write(marshal(Protocol{
 				CMD: CTL_CLEANUP,
 				N:   0,
 			}))
@@ -193,7 +182,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 				continue
 			}
 
-			p, err := unserialize(pb)
+			p, err := unmarshal(pb)
 			if err != nil {
 				continue
 			}
@@ -218,7 +207,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 
 			localConnBuffer <- localConn
 
-			masterConn.Write(serialize(Protocol{
+			masterConn.Write(marshal(Protocol{
 				CMD: CTL_CONNECT_ME,
 				N:   1,
 			}))

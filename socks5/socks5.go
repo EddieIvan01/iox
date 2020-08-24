@@ -15,7 +15,6 @@ import (
 var (
 	Commands = []string{"CONNECT", "BIND", "UDP ASSOCIATE"}
 	AddrType = []string{"", "IPv4", "", "Domain", "IPv6"}
-	Conns    = make([]net.Conn, 0)
 	Verbose  = false
 
 	errAddrType      = errors.New("socks addr type not supported")
@@ -132,10 +131,7 @@ func parseTarget(conn netio.Ctx) (host string, err error) {
 	*/
 
 	if buf[idCmd] > 0x03 || buf[idCmd] == 0x00 {
-		logger.Info(
-			"Unknown Command",
-			buf[idCmd],
-		)
+		logger.Info("Unknown Command: %d", buf[idCmd])
 	}
 
 	if buf[idCmd] != socksCmdConnect { //  only support CONNECT mode
@@ -189,8 +185,7 @@ func bigEndianUint16(b []byte) uint16 {
 
 func pipeWhenClose(conn netio.Ctx, target string) {
 	remoteConn, err := net.DialTimeout(
-		"tcp",
-		target,
+		"tcp", target,
 		time.Millisecond*time.Duration(option.TIMEOUT),
 	)
 	if err != nil {
@@ -240,10 +235,7 @@ func pipeWhenClose(conn netio.Ctx, target string) {
 
 	remoteConnCtx, err := netio.NewTCPCtx(remoteConn, false)
 	if err != nil {
-		logger.Info(
-			"Socks5 remote connect error: %s",
-			err.Error(),
-		)
+		logger.Info("Socks5 remote connect error: %s", err.Error())
 		return
 	}
 
@@ -252,18 +244,12 @@ func pipeWhenClose(conn netio.Ctx, target string) {
 
 func HandleConnection(conn netio.Ctx) {
 	if err := handShake(conn); err != nil {
-		logger.Info(
-			"Socks5 handshake error: %s",
-			err.Error(),
-		)
+		logger.Info("Socks5 handshake error: %s", err.Error())
 		return
 	}
 	addr, err := parseTarget(conn)
 	if err != nil {
-		logger.Info(
-			"socks consult transfer mode or parse target: %s",
-			err.Error(),
-		)
+		logger.Info("socks consult transfer mode or parse target: %s", err.Error())
 		return
 	}
 	pipeWhenClose(conn, addr)

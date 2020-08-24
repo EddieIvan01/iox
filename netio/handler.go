@@ -109,8 +109,8 @@ func (c *UDPCtx) DecryptRead(b []byte) (int, error) {
 	}
 
 	if c.encrypted {
-		// no nonce, skip this packet
 		if len(b) < 0x18 {
+			// no nonce, skip
 			return 0, nil
 		}
 		nonce := b[n-0x18 : n]
@@ -146,6 +146,8 @@ func (c *UDPCtx) EncryptWrite(b []byte) (int, error) {
 	return c.Write(b)
 }
 
-func (c UDPCtx) IsRemoteAddrRegisted() bool {
+/*
+func (c UDPCtx) IsRemoteAddrRegistered() bool {
 	return c.remoteAddr != nil
 }
+*/

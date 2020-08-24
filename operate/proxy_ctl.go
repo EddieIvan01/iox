@@ -29,7 +29,7 @@ type Protocol struct {
 
 var END = []byte{0xEE, 0xFF}
 
-func serialize(p Protocol) []byte {
+func marshal(p Protocol) []byte {
 	buf := make([]byte, 4)
 	buf[0] = p.CMD
 	buf[1] = p.N
@@ -38,7 +38,7 @@ func serialize(p Protocol) []byte {
 	return buf
 }
 
-func unserialize(b []byte) (*Protocol, error) {
+func unmarshal(b []byte) (*Protocol, error) {
 	if len(b) < 2 {
 		return nil, errors.New("Protocol data is too short")
 	}
@@ -102,14 +102,14 @@ func serverHandshake(listener net.Listener) net.Conn {
 			continue
 		}
 
-		p, err := unserialize(pb)
+		p, err := unmarshal(pb)
 		if err != nil {
 			continue
 		}
 
 		if p.CMD == CTL_HANDSHAKE && p.N == CLIENT_HANDSHAKE {
 			logger.Success("Remote socks5 handshake ok")
-			masterConn.Write(serialize(Protocol{
+			masterConn.Write(marshal(Protocol{
 				CMD: CTL_HANDSHAKE,
 				N:   SERVER_HANDSHAKE,
 			}))
@@ -122,15 +122,14 @@ func serverHandshake(listener net.Listener) net.Conn {
 
 func clientHandshake(remote string) (net.Conn, error) {
 	masterConn, err := net.DialTimeout(
-		"tcp",
-		remote,
+		"tcp", remote,
 		time.Millisecond*time.Duration(option.TIMEOUT),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	masterConn.Write(serialize(Protocol{
+	masterConn.Write(marshal(Protocol{
 		CMD: CTL_HANDSHAKE,
 		N:   CLIENT_HANDSHAKE,
 	}))
@@ -140,7 +139,7 @@ func clientHandshake(remote string) (net.Conn, error) {
 		return nil, errors.New("Connect to remote forward server error")
 	}
 
-	p, err := unserialize(pb)
+	p, err := unmarshal(pb)
 	if err != nil {
 		return nil, errors.New("Connect to remote forward server error")
 	}
