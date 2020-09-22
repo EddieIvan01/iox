@@ -12,7 +12,7 @@ const VERSION = "0.4"
 func Usage() {
 	fmt.Printf(
 		"iox v%v\n"+
-			"    Roaming intranet easier (https://github.com/eddieivan01/iox)\n\n"+
+			"    Access intranet easily (https://github.com/eddieivan01/iox)\n\n"+
 			"Usage: iox fwd/proxy [-l [*][HOST:]PORT] [-r [*]HOST:PORT] [-k HEX] [-t TIMEOUT] [-u] [-h] [-v]\n\n"+
 			"Options:\n"+
 			"  -l [*][HOST:]PORT\n"+

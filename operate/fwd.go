@@ -9,16 +9,6 @@ import (
 	"time"
 )
 
-func printFwdSuccess(addrA string, addrB string, encA bool, encB bool) {
-	if encA {
-		addrA = "*" + addrA
-	}
-	if encB {
-		addrB = "*" + addrB
-	}
-	logger.Success("Forward %s traffic between %s and %s", option.PROTOCOL, addrA, addrB)
-}
-
 func local2RemoteTCP(local string, remote string, lenc bool, renc bool) {
 	listener, err := net.Listen("tcp", local)
 	if err != nil {
@@ -26,8 +16,6 @@ func local2RemoteTCP(local string, remote string, lenc bool, renc bool) {
 		return
 	}
 	defer listener.Close()
-
-	printFwdSuccess(local, remote, lenc, renc)
 
 	for {
 		logger.Info("Wait for connection on %s", local)
@@ -110,21 +98,22 @@ func local2RemoteUDP(local string, remote string, lenc bool, renc bool) {
 		return
 	}
 
-	printFwdSuccess(local, remote, lenc, renc)
 	netio.ForwardUDP(listenerCtx, remoteCtx)
 }
 
 func Local2Remote(local string, remote string, lenc bool, renc bool) {
 	if option.PROTOCOL == "TCP" {
+		logger.Success("Forward TCP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
+			local, lenc, remote, renc)
 		local2RemoteTCP(local, remote, lenc, renc)
 	} else {
+		logger.Success("Forward UDP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
+			local, lenc, remote, renc)
 		local2RemoteUDP(local, remote, lenc, renc)
 	}
 }
 
 func local2LocalTCP(localA string, localB string, laenc bool, lbenc bool) {
-	printFwdSuccess(localA, localB, laenc, lbenc)
-
 	var listenerA net.Listener
 	var listenerB net.Listener
 
@@ -252,21 +241,23 @@ func local2LocalUDP(localA string, localB string, laenc bool, lbenc bool) {
 		return
 	}
 
-	printFwdSuccess(localA, localB, laenc, lbenc)
 	netio.ForwardUnconnectedUDP(listenerCtxA, listenerCtxB)
 }
 
 func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 	if option.PROTOCOL == "TCP" {
+		logger.Success("Forward TCP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
+			localA, laenc, localB, lbenc)
+
 		local2LocalTCP(localA, localB, laenc, lbenc)
 	} else {
+		logger.Success("Forward UDP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
+			localA, laenc, localB, lbenc)
 		local2LocalUDP(localA, localB, laenc, lbenc)
 	}
 }
 
 func remote2remoteTCP(remoteA string, remoteB string, raenc bool, rbenc bool) {
-	printFwdSuccess(remoteA, remoteB, raenc, rbenc)
-
 	for {
 		var remoteConnA net.Conn
 		var remoteConnB net.Conn
@@ -422,14 +413,17 @@ func remote2remoteUDP(remoteA string, remoteB string, raenc bool, rbenc bool) {
 		}
 	}
 
-	printFwdSuccess(remoteA, remoteB, raenc, rbenc)
 	netio.ForwardUDP(remoteCtxA, remoteCtxB)
 }
 
 func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
 	if option.PROTOCOL == "TCP" {
+		logger.Success("Forward TCP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
+			remoteA, raenc, remoteB, rbenc)
 		remote2remoteTCP(remoteA, remoteB, raenc, rbenc)
 	} else {
+		logger.Success("Forward UDP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
+			remoteA, raenc, remoteB, rbenc)
 		remote2remoteUDP(remoteA, remoteB, raenc, rbenc)
 	}
 }

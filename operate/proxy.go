@@ -16,7 +16,7 @@ func ProxyLocal(local string, encrypted bool) {
 		return
 	}
 
-	logger.Success("Start socks5 server on %s, encrypted: %v", local, encrypted)
+	logger.Success("Start socks5 server on %s (encrypted: %v)", local, encrypted)
 
 	for {
 		conn, err := listener.Accept()
@@ -45,7 +45,7 @@ func ProxyRemote(remote string, encrypted bool) {
 	}
 	defer session.Close()
 
-	logger.Success("Remote socks5 handshake ok, encrypted: %v", encrypted)
+	logger.Success("Remote socks5 handshake ok (encrypted: %v)", encrypted)
 
 	connectRequest := make(chan uint8, MAX_CONNECTION/2)
 	defer close(connectRequest)
@@ -145,8 +145,8 @@ func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
 	defer session.Close()
 	defer ctlStream.Close()
 
-	logger.Success("Reverse socks5 server handshake ok, from %s, encrypted: %v", session.RemoteAddr().String(), cenc)
-	logger.Success("Socks5 server is listening on %s, encrypted: %v", local, lenc)
+	logger.Success("Reverse socks5 server handshake ok from %s (encrypted: %v)", session.RemoteAddr().String(), cenc)
+	logger.Success("Socks5 server is listening on %s (encrypted: %v)", local, lenc)
 
 	// handle ctrl+C
 	{

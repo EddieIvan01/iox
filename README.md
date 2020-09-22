@@ -32,7 +32,7 @@ Of course, because `iox` is written in Go, the static-link-program is a little l
 
 You can see, all params are uniform. `-l/--local` means listen on a local port; `-r/--remote` means connect to remote host
 
-**Note: after v0.4, `-l` could specify which IP to listen on. If only ports are specified, the default is `0.0.0.0:PORT`** 
+**Note: after v0.4, `-l/--local` could specify which IP to listen on. If only ports are specified, the default is `0.0.0.0:PORT`** 
 
 ```
 -l 127.0.0.1:9999      -l *127.0.0.1:9999      # 127.0.0.1:9999
