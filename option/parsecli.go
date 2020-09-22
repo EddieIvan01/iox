@@ -12,7 +12,7 @@ var (
 	errHexDecodeError      = errors.New("KEY must be a hexadecimal string")
 	PrintUsage             = errors.New("")
 	errUnrecognizedSubMode = errors.New("Malformed args. Incorrect number of `-l/-r` params")
-	errNoSecretKey         = errors.New("Encryption enabled, must special a KEY by `-k` param")
+	errNoSecretKey         = errors.New("Encryption enabled, must specify a KEY by `-k` param")
 	errNotANumber          = errors.New("Timeout param must be a number")
 	errUDPMode             = errors.New("UDP mode only support fwd mode")
 )
@@ -72,7 +72,15 @@ func ParseCli(args []string) (
 				lenc = append(lenc, false)
 			}
 
-			local = append(local, ":"+l)
+			if _, err := strconv.Atoi(l); err == nil {
+				local = append(local, "0.0.0.0:"+l)
+			} else {
+				if l[0] == ':' {
+					local = append(local, "0.0.0.0"+l)
+				} else {
+					local = append(local, l)
+				}
+			}
 			ptr++
 
 		case "-r", "--remote":

@@ -3,19 +3,19 @@ package operate
 import (
 	"errors"
 	"io"
-	"iox/logger"
 	"iox/option"
 	"net"
 	"time"
+
+	"github.com/xtaci/smux"
 )
 
 const (
 	CTL_HANDSHAKE = iota
 	CTL_CONNECT_ME
 	CTL_CLEANUP
-	CTL_HEARTBEAT
 
-	MAX_CONNECTION   = 0x400
+	MAX_CONNECTION   = 0x800
 	CLIENT_HANDSHAKE = 0xC0
 	SERVER_HANDSHAKE = 0xE0
 )
@@ -80,7 +80,7 @@ func readUntilEnd(conn net.Conn) ([]byte, error) {
 
 		output = append(output, buf[0])
 
-		if len(output) >= 2 && bytesEq(END, output[len(output)-2:len(output)]) {
+		if len(output) >= 2 && bytesEq(END, output[len(output)-2:]) {
 			break
 		}
 	}
@@ -88,16 +88,36 @@ func readUntilEnd(conn net.Conn) ([]byte, error) {
 	return output[:2], nil
 }
 
-func serverHandshake(listener net.Listener) net.Conn {
-	var masterConn net.Conn
+func serverHandshake(listener net.Listener) (*smux.Session, *smux.Stream, error) {
+	var conn net.Conn
+	var session *smux.Session
+	var ctlStream *smux.Stream
 	var err error
+
 	for {
-		masterConn, err = listener.Accept()
+		conn, err = listener.Accept()
 		if err != nil {
 			continue
 		}
 
-		pb, err := readUntilEnd(masterConn)
+		session, err = smux.Server(conn, &smux.Config{
+			Version:           2,
+			KeepAliveInterval: option.SMUX_KEEPALIVE_INTERVAL * time.Second,
+			KeepAliveTimeout:  option.SMUX_KEEPALIVE_TIMEOUT * time.Second,
+			MaxFrameSize:      option.SMUX_FRAMESIZE,
+			MaxReceiveBuffer:  option.SMUX_RECVBUFFER,
+			MaxStreamBuffer:   option.SMUX_STREAMBUFFER,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+
+		ctlStream, err = session.AcceptStream()
+		if err != nil {
+			return nil, nil, err
+		}
+
+		pb, err := readUntilEnd(ctlStream)
 		if err != nil {
 			continue
 		}
@@ -108,8 +128,7 @@ func serverHandshake(listener net.Listener) net.Conn {
 		}
 
 		if p.CMD == CTL_HANDSHAKE && p.N == CLIENT_HANDSHAKE {
-			logger.Success("Remote socks5 handshake ok")
-			masterConn.Write(marshal(Protocol{
+			ctlStream.Write(marshal(Protocol{
 				CMD: CTL_HANDSHAKE,
 				N:   SERVER_HANDSHAKE,
 			}))
@@ -117,37 +136,52 @@ func serverHandshake(listener net.Listener) net.Conn {
 		}
 	}
 
-	return masterConn
+	return session, ctlStream, nil
 }
 
-func clientHandshake(remote string) (net.Conn, error) {
-	masterConn, err := net.DialTimeout(
+func clientHandshake(remote string) (*smux.Session, *smux.Stream, error) {
+	conn, err := net.DialTimeout(
 		"tcp", remote,
 		time.Millisecond*time.Duration(option.TIMEOUT),
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	masterConn.Write(marshal(Protocol{
+	session, err := smux.Client(conn, &smux.Config{
+		Version:           2,
+		KeepAliveInterval: option.SMUX_KEEPALIVE_INTERVAL * time.Second,
+		KeepAliveTimeout:  option.SMUX_KEEPALIVE_TIMEOUT * time.Second,
+		MaxFrameSize:      option.SMUX_FRAMESIZE,
+		MaxReceiveBuffer:  option.SMUX_RECVBUFFER,
+		MaxStreamBuffer:   option.SMUX_STREAMBUFFER,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ctlStream, err := session.OpenStream()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ctlStream.Write(marshal(Protocol{
 		CMD: CTL_HANDSHAKE,
 		N:   CLIENT_HANDSHAKE,
 	}))
 
-	pb, err := readUntilEnd(masterConn)
+	pb, err := readUntilEnd(ctlStream)
 	if err != nil {
-		return nil, errors.New("Connect to remote forward server error")
+		return nil, nil, errors.New("Connect to remote forward server error")
 	}
 
 	p, err := unmarshal(pb)
 	if err != nil {
-		return nil, errors.New("Connect to remote forward server error")
+		return nil, nil, errors.New("Connect to remote forward server error")
 	}
-	if p.CMD == CTL_HANDSHAKE && p.N == SERVER_HANDSHAKE {
-		logger.Success("Connect to remote forward server ok")
-	} else {
-		return nil, errors.New("Connect to remote forward server error")
+	if !(p.CMD == CTL_HANDSHAKE && p.N == SERVER_HANDSHAKE) {
+		return nil, nil, errors.New("Connect to remote forward server error")
 	}
 
-	return masterConn, nil
+	return session, ctlStream, nil
 }

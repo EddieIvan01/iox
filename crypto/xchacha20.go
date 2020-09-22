@@ -13,21 +13,33 @@ var (
 	NONCE      []byte
 )
 
-func expand32(key []byte) ([]byte, []byte) {
-	if len(key) >= 0x20 {
-		return key[:0x20], append(key[:0xC], key[len(key)-0xC:]...)
+func shuffle(bs []byte) {
+	for i := range bs {
+		bs[i] ^= byte(i) ^ bs[(i+1)%len(bs)]*((bs[len(bs)-1-i]*bs[i])%255)
 	}
-
-	var c byte = 0x20 - byte(len(key)&0x1F)
-
-	for i := 0; i < int(c); i++ {
-		key = append(key, c)
-	}
-	return key[:0x20], append(key[:0xC], key[len(key)-0xC:]...)
 }
 
 func ExpandKey(key []byte) {
-	SECRET_KEY, NONCE = expand32(key)
+	SECRET_KEY = make([]byte, 0x20)
+	NONCE = make([]byte, 0x18)
+
+	if len(key) < 0x20 {
+		var c byte = 0x20 - byte(len(key)&0x1F)
+
+		for i := 0; i < int(c); i++ {
+			key = append(key, c)
+		}
+	}
+
+	copy(SECRET_KEY, key[:0x20])
+	copy(NONCE, append(key[:0xC], key[len(key)-0xC:]...))
+
+	for i := range SECRET_KEY {
+		SECRET_KEY[i] = (SECRET_KEY[i] + byte(i)%255)
+	}
+
+	shuffle(SECRET_KEY)
+	shuffle(NONCE)
 }
 
 type Cipher struct {

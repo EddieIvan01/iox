@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+func printFwdSuccess(addrA string, addrB string, encA bool, encB bool) {
+	if encA {
+		addrA = "*" + addrA
+	}
+	if encB {
+		addrB = "*" + addrB
+	}
+	logger.Success("Forward %s traffic between %s and %s", option.PROTOCOL, addrA, addrB)
+}
+
 func local2RemoteTCP(local string, remote string, lenc bool, renc bool) {
 	listener, err := net.Listen("tcp", local)
 	if err != nil {
@@ -17,7 +27,7 @@ func local2RemoteTCP(local string, remote string, lenc bool, renc bool) {
 	}
 	defer listener.Close()
 
-	logger.Success("Forward between %s and %s", local, remote)
+	printFwdSuccess(local, remote, lenc, renc)
 
 	for {
 		logger.Info("Wait for connection on %s", local)
@@ -77,6 +87,7 @@ func local2RemoteUDP(local string, remote string, lenc bool, renc bool) {
 		logger.Warn("Listen udp on %s error: %s", local, err.Error())
 		return
 	}
+	defer listener.Close()
 
 	remoteAddr, err := net.ResolveUDPAddr("udp", remote)
 	if err != nil {
@@ -88,6 +99,7 @@ func local2RemoteUDP(local string, remote string, lenc bool, renc bool) {
 		logger.Warn("Dial remote udp %s error: %s", local, err.Error())
 		return
 	}
+	defer remoteConn.Close()
 
 	listenerCtx, err := netio.NewUDPCtx(listener, lenc, false)
 	if err != nil {
@@ -98,7 +110,7 @@ func local2RemoteUDP(local string, remote string, lenc bool, renc bool) {
 		return
 	}
 
-	logger.Success("Forward udp between %s and %s", local, remote)
+	printFwdSuccess(local, remote, lenc, renc)
 	netio.ForwardUDP(listenerCtx, remoteCtx)
 }
 
@@ -111,14 +123,15 @@ func Local2Remote(local string, remote string, lenc bool, renc bool) {
 }
 
 func local2LocalTCP(localA string, localB string, laenc bool, lbenc bool) {
-	logger.Success("Forward between %s and %s", localA, localB)
+	printFwdSuccess(localA, localB, laenc, lbenc)
 
 	var listenerA net.Listener
 	var listenerB net.Listener
 
 	for {
 		signal := make(chan byte)
-		var localConnA, localConnB net.Conn
+		var localConnA net.Conn
+		var localConnB net.Conn
 
 		go func() {
 			var err error
@@ -176,8 +189,15 @@ func local2LocalTCP(localA string, localB string, laenc bool, lbenc bool) {
 		<-signal
 
 		go func() {
-			defer localConnA.Close()
-			defer localConnB.Close()
+			defer func() {
+				if localConnA != nil {
+					localConnA.Close()
+				}
+
+				if localConnB != nil {
+					localConnB.Close()
+				}
+			}()
 
 			localConnCtxA, err := netio.NewTCPCtx(localConnA, laenc)
 			if err != nil {
@@ -209,6 +229,8 @@ func local2LocalUDP(localA string, localB string, laenc bool, lbenc bool) {
 		logger.Warn("Listen udp on %s error: %s", localA, err.Error())
 		return
 	}
+	defer listenerA.Close()
+
 	localAddrB, err := net.ResolveUDPAddr("udp", localB)
 	if err != nil {
 		logger.Warn("Parse udp address %s error: %s", localB, err.Error())
@@ -219,6 +241,7 @@ func local2LocalUDP(localA string, localB string, laenc bool, lbenc bool) {
 		logger.Warn("Listen udp on %s error: %s", localB, err.Error())
 		return
 	}
+	defer listenerB.Close()
 
 	listenerCtxA, err := netio.NewUDPCtx(listenerA, laenc, false)
 	if err != nil {
@@ -229,7 +252,7 @@ func local2LocalUDP(localA string, localB string, laenc bool, lbenc bool) {
 		return
 	}
 
-	logger.Success("Forward udp between %s and %s", localA, localB)
+	printFwdSuccess(localA, localB, laenc, lbenc)
 	netio.ForwardUnconnectedUDP(listenerCtxA, listenerCtxB)
 }
 
@@ -242,7 +265,7 @@ func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
 }
 
 func remote2remoteTCP(remoteA string, remoteB string, raenc bool, rbenc bool) {
-	logger.Success("Forward between %s and %s", remoteA, remoteB)
+	printFwdSuccess(remoteA, remoteB, raenc, rbenc)
 
 	for {
 		var remoteConnA net.Conn
@@ -264,7 +287,6 @@ func remote2remoteTCP(remoteA string, remoteB string, raenc bool, rbenc bool) {
 					time.Sleep(option.CONNECTING_RETRY_DURATION * time.Millisecond)
 					continue
 				}
-
 				break
 			}
 
@@ -336,6 +358,8 @@ func remote2remoteUDP(remoteA string, remoteB string, raenc bool, rbenc bool) {
 		logger.Warn("Dial remote udp %s error: %s", remoteA, err.Error())
 		return
 	}
+	defer remoteConnA.Close()
+
 	remoteAddrB, err := net.ResolveUDPAddr("udp", remoteB)
 	if err != nil {
 		logger.Warn("Parse udp address %s error: %s", remoteB, err.Error())
@@ -346,6 +370,7 @@ func remote2remoteUDP(remoteA string, remoteB string, raenc bool, rbenc bool) {
 		logger.Warn("Dial remote udp %s error: %s", remoteB, err.Error())
 		return
 	}
+	defer remoteConnB.Close()
 
 	remoteCtxA, err := netio.NewUDPCtx(remoteConnA, raenc, true)
 	if err != nil {
@@ -397,7 +422,7 @@ func remote2remoteUDP(remoteA string, remoteB string, raenc bool, rbenc bool) {
 		}
 	}
 
-	logger.Success("Forward udp between %s and %s", remoteA, remoteB)
+	printFwdSuccess(remoteA, remoteB, raenc, rbenc)
 	netio.ForwardUDP(remoteCtxA, remoteCtxB)
 }
 

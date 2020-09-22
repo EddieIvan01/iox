@@ -1,2 +1,4 @@
+github.com/xtaci/smux v1.5.14 h1:1j+zJYDZRv9FHaWqCJfH5RPizIm0fSzJIFbfVn8zsfg=
+github.com/xtaci/smux v1.5.14/go.mod h1:OMlQbT5vcgl2gb49mFkYo6SMf+zP3rcjcwQz7ZU7IGY=
 golang.org/x/sys v0.0.0-20200420163511-1957bb5e6d1f h1:gWF768j/LaZugp8dyS4UwsslYCYz9XgFxvlgsn0n9H8=
 golang.org/x/sys v0.0.0-20200420163511-1957bb5e6d1f/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=

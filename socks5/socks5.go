@@ -192,6 +192,7 @@ func pipeWhenClose(conn netio.Ctx, target string) {
 		logger.Info("Connect remote :" + err.Error())
 		return
 	}
+	defer remoteConn.Close()
 
 	tcpAddr := remoteConn.LocalAddr().(*net.TCPAddr)
 	if tcpAddr.Zone == "" {
@@ -230,8 +231,6 @@ func pipeWhenClose(conn netio.Ctx, target string) {
 
 	conn.EncryptWrite(rep[0 : pindex+2])
 	// Transfer data
-
-	defer remoteConn.Close()
 
 	remoteConnCtx, err := netio.NewTCPCtx(remoteConn, false)
 	if err != nil {

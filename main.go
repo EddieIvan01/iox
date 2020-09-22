@@ -7,16 +7,16 @@ import (
 	"os"
 )
 
-const VERSION = "0.3"
+const VERSION = "0.4"
 
 func Usage() {
 	fmt.Printf(
 		"iox v%v\n"+
 			"    Roaming intranet easier (https://github.com/eddieivan01/iox)\n\n"+
-			"Usage: iox fwd/proxy [-l [*]PORT] [-r [*]HOST:PORT] [-k HEX] [-t TIMEOUT] [-u] [-h] [-v]\n\n"+
+			"Usage: iox fwd/proxy [-l [*][HOST:]PORT] [-r [*]HOST:PORT] [-k HEX] [-t TIMEOUT] [-u] [-h] [-v]\n\n"+
 			"Options:\n"+
-			"  -l [*]PORT\n"+
-			"      port to listen on. `*` means encrypted socket\n"+
+			"  -l [*][HOST:]PORT\n"+
+			"      address to listen on. `*` means encrypted socket\n"+
 			"  -r [*]HOST:PORT\n"+
 			"      remote host to connect, HOST can be IP or Domain. `*` means encrypted socket\n"+
 			"  -k HEX\n"+

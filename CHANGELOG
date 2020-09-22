@@ -1,3 +1,10 @@
+v0.4:
+    1. Add TCP multiplexing in ProxyRemote(reverse proxy), only one TCP connection will be 
+       established between the victim and our forward server
+    
+    2. `-l/--local` parameter could specify which IP to listen on now
+
+
 v0.3:
     1. Replace AES-CTR with XChaCha20.
        Because in Golang, only AES-GCM on AMD64/ARM64 has special assembly-speed-up

@@ -3,12 +3,10 @@ package operate
 import (
 	"iox/logger"
 	"iox/netio"
-	"iox/option"
 	"iox/socks5"
 	"net"
 	"os"
 	"os/signal"
-	"time"
 )
 
 func ProxyLocal(local string, encrypted bool) {
@@ -18,7 +16,7 @@ func ProxyLocal(local string, encrypted bool) {
 		return
 	}
 
-	logger.Success("Start socks5 server on %s", local)
+	logger.Success("Start socks5 server on %s, encrypted: %v", local, encrypted)
 
 	for {
 		conn, err := listener.Accept()
@@ -40,48 +38,40 @@ func ProxyLocal(local string, encrypted bool) {
 }
 
 func ProxyRemote(remote string, encrypted bool) {
-	masterConn, err := clientHandshake(remote)
+	session, ctlStream, err := clientHandshake(remote)
 	if err != nil {
 		logger.Warn(err.Error())
 		return
 	}
+	defer session.Close()
+
+	logger.Success("Remote socks5 handshake ok, encrypted: %v", encrypted)
 
 	connectRequest := make(chan uint8, MAX_CONNECTION/2)
 	defer close(connectRequest)
-
 	endSignal := make(chan struct{})
 
-	// handle ctrl+C and send heartbeat packets periodically
+	// handle ctrl+C
 	{
 		sigs := make(chan os.Signal)
 		signal.Notify(sigs, os.Interrupt)
 		go func() {
 			<-sigs
-			masterConn.Write(marshal(Protocol{
+			ctlStream.Write(marshal(Protocol{
 				CMD: CTL_CLEANUP,
 				N:   0,
 			}))
 			logger.Success("Recv Ctrl+C, exit now")
 			os.Exit(0)
 		}()
-
-		ticker := time.NewTicker(time.Second * option.HEARTBEAT_FREQUENCY)
-		go func() {
-			for {
-				<-ticker.C
-				masterConn.Write(marshal(Protocol{
-					CMD: CTL_HEARTBEAT,
-					N:   0,
-				}))
-			}
-		}()
 	}
 
-	// handle master conn
+	// handle ctl stream
 	go func() {
-		defer masterConn.Close()
+		defer ctlStream.Close()
+
 		for {
-			pb, err := readUntilEnd(masterConn)
+			pb, err := readUntilEnd(ctlStream)
 			if err != nil {
 				continue
 			}
@@ -110,16 +100,14 @@ func ProxyRemote(remote string, encrypted bool) {
 		case n := <-connectRequest:
 			for n > 0 {
 				go func() {
-					conn, err := net.DialTimeout(
-						"tcp", remote,
-						time.Duration(option.TIMEOUT)*time.Millisecond,
-					)
+					stream, err := session.OpenStream()
 					if err != nil {
 						logger.Info(err.Error())
 						return
 					}
+					defer stream.Close()
 
-					connCtx, err := netio.NewTCPCtx(conn, encrypted)
+					connCtx, err := netio.NewTCPCtx(stream, encrypted)
 					if err != nil {
 						return
 					}
@@ -132,15 +120,15 @@ func ProxyRemote(remote string, encrypted bool) {
 	}
 }
 
-func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
-	masterListener, err := net.Listen("tcp", master)
+func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
+	masterListener, err := net.Listen("tcp", control)
 	if err != nil {
-		logger.Warn("Listen on %s error", master)
+		logger.Warn("Listen on %s error", control)
 		return
 	}
 	defer masterListener.Close()
 
-	logger.Info("Listen on %s for remote socks5 server", master)
+	logger.Info("Listen on %s for reverse socks5", control)
 
 	localListener, err := net.Listen("tcp", local)
 	if err != nil {
@@ -149,10 +137,16 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 	}
 	defer localListener.Close()
 
-	masterConn := serverHandshake(masterListener)
-	defer func() {
-		masterConn.Close()
-	}()
+	session, ctlStream, err := serverHandshake(masterListener)
+	if err != nil {
+		logger.Warn(err.Error())
+		return
+	}
+	defer session.Close()
+	defer ctlStream.Close()
+
+	logger.Success("Reverse socks5 server handshake ok, from %s, encrypted: %v", session.RemoteAddr().String(), cenc)
+	logger.Success("Socks5 server is listening on %s, encrypted: %v", local, lenc)
 
 	// handle ctrl+C
 	{
@@ -160,7 +154,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 		signal.Notify(sigs, os.Interrupt)
 		go func() {
 			<-sigs
-			masterConn.Write(marshal(Protocol{
+			ctlStream.Write(marshal(Protocol{
 				CMD: CTL_CLEANUP,
 				N:   0,
 			}))
@@ -172,12 +166,10 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 	localConnBuffer := make(chan net.Conn, MAX_CONNECTION/2)
 	defer close(localConnBuffer)
 
-	logger.Success("Forward socks5 server to %s", local)
-
-	// handle masterConn read
+	// handle ctl stream read
 	go func() {
 		for {
-			pb, err := readUntilEnd(masterConn)
+			pb, err := readUntilEnd(ctlStream)
 			if err != nil {
 				continue
 			}
@@ -191,8 +183,6 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 			case CTL_CLEANUP:
 				logger.Success("Recv exit signal from remote, exit now")
 				os.Exit(0)
-			case CTL_HEARTBEAT:
-				continue
 			}
 		}
 	}()
@@ -207,7 +197,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 
 			localConnBuffer <- localConn
 
-			masterConn.Write(marshal(Protocol{
+			ctlStream.Write(marshal(Protocol{
 				CMD: CTL_CONNECT_ME,
 				N:   1,
 			}))
@@ -215,7 +205,7 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 	}()
 
 	for {
-		remoteConn, err := masterListener.Accept()
+		remoteStream, err := session.AcceptStream()
 		if err != nil {
 			continue
 		}
@@ -223,10 +213,10 @@ func ProxyRemoteL2L(master string, local string, menc bool, lenc bool) {
 		localConn := <-localConnBuffer
 
 		go func() {
-			defer remoteConn.Close()
+			defer remoteStream.Close()
 			defer localConn.Close()
 
-			remoteConnCtx, err := netio.NewTCPCtx(remoteConn, menc)
+			remoteConnCtx, err := netio.NewTCPCtx(remoteStream, cenc)
 			if err != nil {
 				return
 			}

@@ -13,6 +13,9 @@ type Ctx interface {
 	net.Conn
 }
 
+var _ Ctx = &TCPCtx{}
+var _ Ctx = &UDPCtx{}
+
 type TCPCtx struct {
 	net.Conn
 	encrypted bool
