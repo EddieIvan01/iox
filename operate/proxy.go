@@ -47,7 +47,7 @@ func ProxyRemote(remote string, encrypted bool) {
 
 	logger.Success("Remote socks5 handshake ok (encrypted: %v)", encrypted)
 
-	connectRequest := make(chan uint8, MAX_CONNECTION/2)
+	connectRequest := make(chan uint8, MAX_CONNECTION)
 	defer close(connectRequest)
 	endSignal := make(chan struct{})
 
@@ -73,14 +73,11 @@ func ProxyRemote(remote string, encrypted bool) {
 		for {
 			pb, err := readUntilEnd(ctlStream)
 			if err != nil {
-				continue
+				logger.Warn("Control connection has been closed, exit now")
+				os.Exit(-1)
 			}
 
-			p, err := unmarshal(pb)
-			if err != nil {
-				continue
-			}
-
+			p := unmarshal(pb)
 			switch p.CMD {
 			case CTL_CONNECT_ME:
 				connectRequest <- p.N
@@ -163,7 +160,7 @@ func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
 		}()
 	}
 
-	localConnBuffer := make(chan net.Conn, MAX_CONNECTION/2)
+	localConnBuffer := make(chan net.Conn, MAX_CONNECTION)
 	defer close(localConnBuffer)
 
 	// handle ctl stream read
@@ -171,14 +168,11 @@ func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
 		for {
 			pb, err := readUntilEnd(ctlStream)
 			if err != nil {
-				continue
+				logger.Warn("Control connection has been closed, exit now")
+				os.Exit(-1)
 			}
 
-			p, err := unmarshal(pb)
-			if err != nil {
-				continue
-			}
-
+			p := unmarshal(pb)
 			switch p.CMD {
 			case CTL_CLEANUP:
 				logger.Success("Recv exit signal from remote, exit now")
@@ -197,10 +191,14 @@ func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
 
 			localConnBuffer <- localConn
 
-			ctlStream.Write(marshal(Protocol{
+			_, err = ctlStream.Write(marshal(Protocol{
 				CMD: CTL_CONNECT_ME,
 				N:   1,
 			}))
+			if err != nil {
+				logger.Warn("Control connection has been closed, exit now")
+				os.Exit(-1)
+			}
 		}
 	}()
 

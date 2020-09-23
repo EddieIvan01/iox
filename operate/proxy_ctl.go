@@ -2,7 +2,6 @@ package operate
 
 import (
 	"errors"
-	"io"
 	"iox/option"
 	"net"
 	"time"
@@ -27,28 +26,22 @@ type Protocol struct {
 	// ACK uint16
 }
 
-var END = []byte{0xEE, 0xFF}
+var PROTO_END = []byte{0xEE, 0xFF}
 
 func marshal(p Protocol) []byte {
 	buf := make([]byte, 4)
 	buf[0] = p.CMD
 	buf[1] = p.N
 
-	buf[2], buf[3] = END[0], END[1]
+	buf[2], buf[3] = PROTO_END[0], PROTO_END[1]
 	return buf
 }
 
-func unmarshal(b []byte) (*Protocol, error) {
-	if len(b) < 2 {
-		return nil, errors.New("Protocol data is too short")
-	}
-
-	p := &Protocol{
+func unmarshal(b []byte) Protocol {
+	return Protocol{
 		CMD: b[0],
 		N:   b[1],
 	}
-
-	return p, nil
 }
 
 func bytesEq(a, b []byte) bool {
@@ -68,19 +61,16 @@ func readUntilEnd(conn net.Conn) ([]byte, error) {
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
 			return nil, err
 		}
 
-		if n != 1 {
+		if n != 1 || len(output) > 4 {
 			return nil, errors.New("Transmission error")
 		}
 
 		output = append(output, buf[0])
 
-		if len(output) >= 2 && bytesEq(END, output[len(output)-2:]) {
+		if len(output) == 4 && bytesEq(PROTO_END, output[len(output)-2:]) {
 			break
 		}
 	}
@@ -122,11 +112,7 @@ func serverHandshake(listener net.Listener) (*smux.Session, *smux.Stream, error)
 			continue
 		}
 
-		p, err := unmarshal(pb)
-		if err != nil {
-			continue
-		}
-
+		p := unmarshal(pb)
 		if p.CMD == CTL_HANDSHAKE && p.N == CLIENT_HANDSHAKE {
 			ctlStream.Write(marshal(Protocol{
 				CMD: CTL_HANDSHAKE,
@@ -175,10 +161,7 @@ func clientHandshake(remote string) (*smux.Session, *smux.Stream, error) {
 		return nil, nil, errors.New("Connect to remote forward server error")
 	}
 
-	p, err := unmarshal(pb)
-	if err != nil {
-		return nil, nil, errors.New("Connect to remote forward server error")
-	}
+	p := unmarshal(pb)
 	if !(p.CMD == CTL_HANDSHAKE && p.N == SERVER_HANDSHAKE) {
 		return nil, nil, errors.New("Connect to remote forward server error")
 	}
