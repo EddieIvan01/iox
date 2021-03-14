@@ -8,17 +8,18 @@ import (
 )
 
 var (
-	errUnrecognizedMode    = errors.New("Unrecognized mode. Must choose a working mode in [fwd/proxy]")
-	errHexDecodeError      = errors.New("KEY must be a hexadecimal string")
-	PrintUsage             = errors.New("")
-	errUnrecognizedSubMode = errors.New("Malformed args. Incorrect number of `-l/-r` params")
-	errNoSecretKey         = errors.New("Encryption enabled, must specify a KEY by `-k` param")
-	errNotANumber          = errors.New("Timeout param must be a number")
-	errUDPMode             = errors.New("UDP mode only support fwd mode")
+	errUnrecognizedMode        = errors.New("Unrecognized mode. Must choose a working mode in [fwd/proxy]")
+	errHexDecodeError          = errors.New("Key must be a hexadecimal string")
+	PrintUsage                 = errors.New("")
+	errUnrecognizedSubMode     = errors.New("Malformed args. Incorrect number of socket descriptors")
+	errNoSecretKey             = errors.New("Encryption enabled, must specify a key by `-k` param")
+	errNotANumber              = errors.New("Timeout param must be a number")
+	errUDPProxyMode            = errors.New("Unsupported UDP proxy mode")
+	errFwdUnreliableBtReliable = errors.New("Can't forward between unreliable and reliable protocols")
 )
 
 const (
-	SUBMODE_L2L = iota
+	SUBMODE_L2L byte = iota
 	SUBMODE_R2R
 	SUBMODE_L2R
 
@@ -27,14 +28,10 @@ const (
 	SUBMODE_RPL2L
 )
 
-// Dont need flag-lib
 func ParseCli(args []string) (
 	mode string,
-	submode int,
-	local []string,
-	remote []string,
-	lenc []bool,
-	renc []bool,
+	submode byte,
+	descs []*SocketDesc,
 	err error) {
 
 	if len(args) == 0 {
@@ -62,42 +59,19 @@ func ParseCli(args []string) (
 			break
 		}
 
+		if args[ptr][0] != '-' {
+			var desc *SocketDesc
+			desc, err = NewSocketDesc(args[ptr])
+			if err != nil {
+				return
+			}
+			descs = append(descs, desc)
+
+			ptr++
+			continue
+		}
+
 		switch args[ptr] {
-		case "-l", "--local":
-			l := args[ptr+1]
-			if l[0] == '*' {
-				lenc = append(lenc, true)
-				l = l[1:]
-			} else {
-				lenc = append(lenc, false)
-			}
-
-			if _, err := strconv.Atoi(l); err == nil {
-				local = append(local, "0.0.0.0:"+l)
-			} else {
-				if l[0] == ':' {
-					local = append(local, "0.0.0.0"+l)
-				} else {
-					local = append(local, l)
-				}
-			}
-			ptr++
-
-		case "-r", "--remote":
-			r := args[ptr+1]
-			if r[0] == '*' {
-				renc = append(renc, true)
-				r = r[1:]
-			} else {
-				renc = append(renc, false)
-			}
-
-			remote = append(remote, r)
-			ptr++
-
-		case "-u", "--udp":
-			PROTOCOL = "UDP"
-
 		case "-k", "--key":
 			var key []byte
 			key, err = hex.DecodeString(args[ptr+1])
@@ -127,23 +101,25 @@ func ParseCli(args []string) (
 
 	if mode == "fwd" {
 		switch {
-		case len(local) == 0 && len(remote) == 2:
-			submode = SUBMODE_R2R
-		case len(local) == 1 && len(remote) == 1:
-			submode = SUBMODE_L2R
-		case len(local) == 2 && len(remote) == 0:
-			submode = SUBMODE_L2L
-		default:
+		case len(descs) != 2:
 			err = errUnrecognizedSubMode
 			return
+		case descs[0].IsListener && descs[1].IsListener:
+			submode = SUBMODE_L2L
+		case !descs[0].IsListener && !descs[1].IsListener:
+			submode = SUBMODE_R2R
+		default:
+			submode = SUBMODE_L2R
 		}
 	} else {
 		switch {
-		case len(local) == 0 && len(remote) == 1:
-			submode = SUBMODE_RP
-		case len(local) == 1 && len(remote) == 0:
+		case len(descs) == 1 && descs[0].IsProxyProto():
 			submode = SUBMODE_LP
-		case len(local) == 2 && len(remote) == 0:
+		case len(descs) == 1 && !descs[0].IsProxyProto():
+			submode = SUBMODE_RP
+		case len(descs) == 2 &&
+			((descs[0].IsListener && descs[1].IsProxyProto()) ||
+				(descs[1].IsListener && descs[0].IsProxyProto())):
 			submode = SUBMODE_RPL2L
 		default:
 			err = errUnrecognizedSubMode
@@ -151,56 +127,30 @@ func ParseCli(args []string) (
 		}
 	}
 
-	if len(lenc) != len(local) || len(renc) != len(remote) {
-		err = errUnrecognizedSubMode
-		return
-	}
-
 	if crypto.SECRET_KEY == nil {
-		for i, _ := range lenc {
-			if lenc[i] {
-				err = errNoSecretKey
-				return
-			}
-		}
-
-		for i, _ := range renc {
-			if renc[i] {
+		for i := range descs {
+			if descs[i].Secret {
 				err = errNoSecretKey
 				return
 			}
 		}
 	}
 
-	if PROTOCOL == "UDP" && mode == "proxy" {
-		err = errUDPMode
+	if mode == "fwd" && ((descs[0].IsProtoReliable() && !descs[1].IsProtoReliable()) ||
+		(!descs[0].IsProtoReliable() && descs[1].IsProtoReliable())) {
+		err = errFwdUnreliableBtReliable
 		return
 	}
 
-	shouldFwdWithoutDec(lenc, renc)
+	if mode == "fwd" && len(descs) == 2 {
+		if descs[0].Secret && descs[1].Secret {
+			FORWARD_WITHOUT_DEC = true
+		}
+
+		if descs[0].Compress && descs[1].Compress {
+			FORWARD_WITHOUT_COMPRESS = true
+		}
+	}
 
 	return
-}
-
-func shouldFwdWithoutDec(lenc []bool, renc []bool) {
-	if len(lenc)+len(renc) != 2 {
-		return
-	}
-
-	var result uint8
-	for i, _ := range lenc {
-		if lenc[i] {
-			result++
-		}
-	}
-
-	for i, _ := range renc {
-		if renc[i] {
-			result++
-		}
-	}
-
-	if result == 2 {
-		FORWARD_WITHOUT_DEC = true
-	}
 }

@@ -1,16 +1,18 @@
 /*
  Third-party chacha20 lib from https://github.com/Yawning/chacha20
+ Its module is wrong so we couldn't import by go mod
 */
 package crypto
 
 import (
 	"crypto/rand"
+	"io"
+
 	"iox/crypto/chacha20"
 )
 
 var (
 	SECRET_KEY []byte
-	NONCE      []byte
 )
 
 func shuffle(bs []byte) {
@@ -21,10 +23,9 @@ func shuffle(bs []byte) {
 
 func ExpandKey(key []byte) {
 	SECRET_KEY = make([]byte, 0x20)
-	NONCE = make([]byte, 0x18)
 
 	if len(key) < 0x20 {
-		var c byte = 0x20 - byte(len(key)&0x1F)
+		var c byte = 0x20 - byte(len(key)&0x1f)
 
 		for i := 0; i < int(c); i++ {
 			key = append(key, c)
@@ -32,31 +33,16 @@ func ExpandKey(key []byte) {
 	}
 
 	copy(SECRET_KEY, key[:0x20])
-	copy(NONCE, append(key[:0xC], key[len(key)-0xC:]...))
 
 	for i := range SECRET_KEY {
 		SECRET_KEY[i] = (SECRET_KEY[i] + byte(i)%255)
 	}
 
 	shuffle(SECRET_KEY)
-	shuffle(NONCE)
 }
 
 type Cipher struct {
 	c *chacha20.Cipher
-}
-
-func NewCipherPair() (*Cipher, *Cipher, error) {
-	ccA, err := chacha20.New(SECRET_KEY, NONCE)
-	if err != nil {
-		return nil, nil, err
-	}
-	ccB, err := chacha20.New(SECRET_KEY, NONCE)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return &Cipher{c: ccA}, &Cipher{c: ccB}, nil
 }
 
 func RandomNonce() ([]byte, error) {
@@ -81,4 +67,54 @@ func NewCipher(nonce []byte) (*Cipher, error) {
 
 func (c Cipher) StreamXOR(dst []byte, src []byte) {
 	c.c.XORKeyStream(dst, src)
+}
+
+type Reader struct {
+	r      io.Reader
+	cipher *Cipher
+}
+
+type Writer struct {
+	w      io.Writer
+	cipher *Cipher
+}
+
+func NewReader(r io.Reader, iv []byte) (*Reader, error) {
+	cipher, err := NewCipher(iv)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Reader{
+		r:      r,
+		cipher: cipher,
+	}, nil
+}
+
+func NewWriter(w io.Writer, iv []byte) (*Writer, error) {
+	cipher, err := NewCipher(iv)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Writer{
+		w:      w,
+		cipher: cipher,
+	}, nil
+}
+
+func (r *Reader) Read(b []byte) (int, error) {
+	n, err := r.r.Read(b)
+	if err != nil {
+		return n, err
+	}
+
+	r.cipher.StreamXOR(b[:n], b[:n])
+	return n, nil
+}
+
+func (w *Writer) Write(b []byte) (int, error) {
+	w.cipher.StreamXOR(b, b)
+	n, err := w.w.Write(b)
+	return n, err
 }

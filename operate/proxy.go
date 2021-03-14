@@ -3,31 +3,36 @@ package operate
 import (
 	"iox/logger"
 	"iox/netio"
+	"iox/option"
 	"iox/socks5"
 	"net"
 	"os"
 	"os/signal"
 )
 
-func ProxyLocal(local string, encrypted bool) {
-	listener, err := net.Listen("tcp", local)
+func ProxyLocal(localDesc *option.SocketDesc) {
+	listener, err := localDesc.GetListener()
 	if err != nil {
-		logger.Warn("Socks5 listen on %s error: %s", local, err.Error())
+		logger.Warn("Socks5 listen on %s error: %s", localDesc.Addr, err.Error())
 		return
 	}
 
-	logger.Success("Start socks5 server on %s (encrypted: %v)", local, encrypted)
+	logger.Success("Start socks5 server on %s", localDesc.Addr)
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			if _, ok := err.(*net.OpError); ok || err == net.ErrClosed {
+				logger.Success("Smux session has been closed")
+				os.Exit(0)
+			}
 			logger.Warn("Socks5 handle local connect error: %s", err.Error())
 			continue
 		}
 
 		go func() {
-			defer conn.Close()
-			connCtx, err := netio.NewTCPCtx(conn, encrypted)
+			connCtx, err := netio.NewTCPCtx(conn, localDesc.Secret, localDesc.Compress)
+			defer connCtx.Close()
 			if err != nil {
 				return
 			}
@@ -37,15 +42,15 @@ func ProxyLocal(local string, encrypted bool) {
 	}
 }
 
-func ProxyRemote(remote string, encrypted bool) {
-	session, ctlStream, err := clientHandshake(remote)
+func ProxyRemote(remoteDesc *option.SocketDesc) {
+	ctlStreamCtx, err := clientHandshake(remoteDesc)
 	if err != nil {
 		logger.Warn(err.Error())
 		return
 	}
-	defer session.Close()
+	defer ctlStreamCtx.Close()
 
-	logger.Success("Remote socks5 handshake ok (encrypted: %v)", encrypted)
+	logger.Success("Remote socks5 handshake OK")
 
 	connectRequest := make(chan uint8, MAX_CONNECTION)
 	defer close(connectRequest)
@@ -57,7 +62,7 @@ func ProxyRemote(remote string, encrypted bool) {
 		signal.Notify(sigs, os.Interrupt)
 		go func() {
 			<-sigs
-			ctlStream.Write(marshal(Protocol{
+			ctlStreamCtx.Write(marshal(Protocol{
 				CMD: CTL_CLEANUP,
 				N:   0,
 			}))
@@ -68,10 +73,8 @@ func ProxyRemote(remote string, encrypted bool) {
 
 	// handle ctl stream
 	go func() {
-		defer ctlStream.Close()
-
 		for {
-			pb, err := readUntilEnd(ctlStream)
+			pb, err := readUntilEnd(ctlStreamCtx)
 			if err != nil {
 				logger.Warn("Control connection has been closed, exit now")
 				os.Exit(-1)
@@ -97,18 +100,22 @@ func ProxyRemote(remote string, encrypted bool) {
 		case n := <-connectRequest:
 			for n > 0 {
 				go func() {
-					stream, err := session.OpenStream()
+					conn, err := remoteDesc.GetConn()
 					if err != nil {
 						logger.Info(err.Error())
 						return
 					}
-					defer stream.Close()
 
-					connCtx, err := netio.NewTCPCtx(stream, encrypted)
+					// Init UDP unconnected session
+					if remoteDesc.Proto == "kcp" {
+						conn.Write([]byte{0})
+					}
+
+					connCtx, err := netio.NewTCPCtx(conn, remoteDesc.Secret, remoteDesc.Compress)
+					defer connCtx.Close()
 					if err != nil {
 						return
 					}
-
 					socks5.HandleConnection(connCtx)
 				}()
 				n--
@@ -117,33 +124,32 @@ func ProxyRemote(remote string, encrypted bool) {
 	}
 }
 
-func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
-	masterListener, err := net.Listen("tcp", control)
+func ProxyRemoteL2L(ctlDesc *option.SocketDesc, localDesc *option.SocketDesc) {
+	ctlListener, err := ctlDesc.GetListener()
 	if err != nil {
-		logger.Warn("Listen on %s error", control)
+		logger.Warn("Listen on %s error", ctlDesc.Addr)
 		return
 	}
-	defer masterListener.Close()
+	defer ctlListener.Close()
 
-	logger.Info("Listen on %s for reverse socks5", control)
+	logger.Info("Listen on %s for reverse socks5", ctlDesc.Addr)
 
-	localListener, err := net.Listen("tcp", local)
+	localListener, err := localDesc.GetListener()
 	if err != nil {
-		logger.Warn("Listen on %s error", local)
+		logger.Warn("Listen on %s error", localDesc.Addr)
 		return
 	}
 	defer localListener.Close()
 
-	session, ctlStream, err := serverHandshake(masterListener)
+	ctlStreamCtx, err := serverHandshake(ctlListener, ctlDesc.Secret, ctlDesc.Compress)
+	defer ctlStreamCtx.Close()
 	if err != nil {
 		logger.Warn(err.Error())
 		return
 	}
-	defer session.Close()
-	defer ctlStream.Close()
 
-	logger.Success("Reverse socks5 server handshake ok from %s (encrypted: %v)", session.RemoteAddr().String(), cenc)
-	logger.Success("Socks5 server is listening on %s (encrypted: %v)", local, lenc)
+	logger.Success("Reverse socks5 server handshake OK")
+	logger.Success("Socks5 server is listening on %s", localDesc.Addr)
 
 	// handle ctrl+C
 	{
@@ -151,7 +157,7 @@ func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
 		signal.Notify(sigs, os.Interrupt)
 		go func() {
 			<-sigs
-			ctlStream.Write(marshal(Protocol{
+			ctlStreamCtx.Write(marshal(Protocol{
 				CMD: CTL_CLEANUP,
 				N:   0,
 			}))
@@ -166,7 +172,7 @@ func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
 	// handle ctl stream read
 	go func() {
 		for {
-			pb, err := readUntilEnd(ctlStream)
+			pb, err := readUntilEnd(ctlStreamCtx)
 			if err != nil {
 				logger.Warn("Control connection has been closed, exit now")
 				os.Exit(-1)
@@ -186,12 +192,17 @@ func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
 		for {
 			localConn, err := localListener.Accept()
 			if err != nil {
+				if _, ok := err.(*net.OpError); ok || err == net.ErrClosed {
+					logger.Success("Smux session has been closed")
+					os.Exit(0)
+				}
+				logger.Info(err.Error())
 				continue
 			}
 
 			localConnBuffer <- localConn
 
-			_, err = ctlStream.Write(marshal(Protocol{
+			_, err = ctlStreamCtx.Write(marshal(Protocol{
 				CMD: CTL_CONNECT_ME,
 				N:   1,
 			}))
@@ -203,23 +214,31 @@ func ProxyRemoteL2L(control string, local string, cenc bool, lenc bool) {
 	}()
 
 	for {
-		remoteStream, err := session.AcceptStream()
+		remoteStream, err := ctlListener.Accept()
 		if err != nil {
+			if _, ok := err.(*net.OpError); ok || err == net.ErrClosed {
+				logger.Success("Smux session has been closed")
+				os.Exit(0)
+			}
 			continue
+		}
+
+		// Init UDP unconnected session
+		if ctlDesc.Proto == "kcp" {
+			remoteStream.Read([]byte{0})
 		}
 
 		localConn := <-localConnBuffer
 
 		go func() {
-			defer remoteStream.Close()
-			defer localConn.Close()
-
-			remoteConnCtx, err := netio.NewTCPCtx(remoteStream, cenc)
+			remoteConnCtx, err := netio.NewTCPCtx(remoteStream, ctlDesc.Secret, ctlDesc.Compress)
+			defer remoteConnCtx.Close()
 			if err != nil {
 				return
 			}
 
-			localConnCtx, err := netio.NewTCPCtx(localConn, lenc)
+			localConnCtx, err := netio.NewTCPCtx(localConn, localDesc.Secret, localDesc.Compress)
+			defer localConnCtx.Close()
 			if err != nil {
 				return
 			}

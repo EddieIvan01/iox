@@ -7,33 +7,28 @@ import (
 	"os"
 )
 
-const VERSION = "0.4"
+const VERSION = "0.5-beta"
 
 func Usage() {
 	fmt.Printf(
-		"iox v%v\n"+
-			"    Access intranet easily (https://github.com/eddieivan01/iox)\n\n"+
-			"Usage: iox fwd/proxy [-l [*][HOST:]PORT] [-r [*]HOST:PORT] [-k HEX] [-t TIMEOUT] [-u] [-h] [-v]\n\n"+
+		"iox v%s\n"+
+			"    Access intranet easily (https://github.com/eddieivan01/iox)\n"+
+			"    (Protocols: %s)\n\n"+
+			"Usage: iox <MODE> [OPTIONS] <SOCKET_DESCRIPTOR> [SOCKET_DESCRIPTOR]\n\n"+
 			"Options:\n"+
-			"  -l [*][HOST:]PORT\n"+
-			"      address to listen on. `*` means encrypted socket\n"+
-			"  -r [*]HOST:PORT\n"+
-			"      remote host to connect, HOST can be IP or Domain. `*` means encrypted socket\n"+
 			"  -k HEX\n"+
-			"      hexadecimal format key, be used to generate Key and IV\n"+
-			"  -u\n"+
-			"      udp forward mode\n"+
+			"      hexadecimal format key (required when encryption is enabled)\n"+
 			"  -t TIMEOUT\n"+
 			"      set connection timeout(millisecond), default is 5000\n"+
 			"  -v\n"+
 			"      enable log output\n"+
 			"  -h\n"+
-			"      print usage then exit\n", VERSION,
+			"      print usage then exit\n", VERSION, option.SupportedProtocols,
 	)
 }
 
 func main() {
-	mode, submode, local, remote, lenc, renc, err := option.ParseCli(os.Args[1:])
+	mode, submode, descs, err := option.ParseCli(os.Args[1:])
 	if err != nil {
 		if err == option.PrintUsage {
 			Usage()
@@ -47,20 +42,28 @@ func main() {
 	case "fwd":
 		switch submode {
 		case option.SUBMODE_L2R:
-			operate.Local2Remote(local[0], remote[0], lenc[0], renc[0])
+			if descs[0].IsListener {
+				operate.Local2Remote(descs[0], descs[1])
+			} else {
+				operate.Local2Remote(descs[1], descs[0])
+			}
 		case option.SUBMODE_L2L:
-			operate.Local2Local(local[0], local[1], lenc[0], lenc[1])
+			operate.Local2Local(descs[0], descs[1])
 		case option.SUBMODE_R2R:
-			operate.Remote2Remote(remote[0], remote[1], renc[0], renc[1])
+			operate.Remote2Remote(descs[0], descs[1])
 		}
 	case "proxy":
 		switch submode {
 		case option.SUBMODE_LP:
-			operate.ProxyLocal(local[0], lenc[0])
+			operate.ProxyLocal(descs[0])
 		case option.SUBMODE_RP:
-			operate.ProxyRemote(remote[0], renc[0])
+			operate.ProxyRemote(descs[0])
 		case option.SUBMODE_RPL2L:
-			operate.ProxyRemoteL2L(local[0], local[1], lenc[0], lenc[1])
+			if descs[0].IsProxyProto() {
+				operate.ProxyRemoteL2L(descs[1], descs[0])
+			} else {
+				operate.ProxyRemoteL2L(descs[0], descs[1])
+			}
 		}
 	}
 }

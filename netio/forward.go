@@ -4,10 +4,14 @@ import (
 	"io"
 	"iox/logger"
 	"iox/option"
+	"reflect"
+	"unsafe"
 )
 
-func CipherCopy(dst Ctx, src Ctx) (int64, error) {
-	buffer := make([]byte, option.TCP_BUFFER_SIZE)
+func Copy(dst Ctx, src Ctx) (int64, error) {
+	buffer := TCPBufferPool.Get().([]byte)
+	defer TCPBufferPool.Put(buffer)
+
 	var written int64
 	var err error
 
@@ -15,13 +19,13 @@ func CipherCopy(dst Ctx, src Ctx) (int64, error) {
 		var nr int
 		var er error
 
-		nr, er = src.DecryptRead(buffer)
+		nr, er = src.Read(buffer)
 
 		if nr > 0 {
 			var nw int
 			var ew error
 
-			nw, ew = dst.EncryptWrite(buffer[:nr])
+			nw, ew = dst.Write(buffer[:nr])
 
 			if nw > 0 {
 				logger.Info("<== [%d bytes] ==> ", nw)
@@ -51,16 +55,25 @@ func PipeForward(ctxA Ctx, ctxB Ctx) {
 	signal := make(chan struct{}, 1)
 
 	go func() {
-		CipherCopy(ctxA, ctxB)
+		Copy(ctxA, ctxB)
 		signal <- struct{}{}
 	}()
 
 	go func() {
-		CipherCopy(ctxB, ctxA)
+		Copy(ctxB, ctxA)
 		signal <- struct{}{}
 	}()
 
 	<-signal
+}
+
+var UDP_INIT_PACKET = []byte{
+	0xcc, 0xdd, 0xee, 0xff,
+}
+
+func isUDPInitPacket(buf []byte) bool {
+	return buf[0] == UDP_INIT_PACKET[0] && buf[1] == UDP_INIT_PACKET[1] &&
+		buf[2] == UDP_INIT_PACKET[2] && buf[3] == UDP_INIT_PACKET[3]
 }
 
 // This function will run forever
@@ -68,17 +81,16 @@ func PipeForward(ctxA Ctx, ctxB Ctx) {
 // but it will introduce the mutex-lock overhead
 func ForwardUDP(ctxA Ctx, ctxB Ctx) {
 	go func() {
-		buffer := make([]byte, option.UDP_PACKET_MAX_SIZE)
+		buffer := UDPBufferPool.Get().([]byte)
+		defer UDPBufferPool.Put(buffer)
 		for {
-			nr, _ := ctxA.DecryptRead(buffer)
+			nr, _ := ctxA.Read(buffer)
 			if nr > 0 {
-				if nr == 4 &&
-					buffer[0] == 0xCC && buffer[1] == 0xDD &&
-					buffer[2] == 0xEE && buffer[3] == 0xFF {
+				if nr == 4 && isUDPInitPacket(buffer[:4]) {
 					continue
 				}
 
-				nw, _ := ctxB.EncryptWrite(buffer[:nr])
+				nw, _ := ctxB.Write(buffer[:nr])
 				if nw > 0 {
 					logger.Info("<== [%d bytes] ==>", nw)
 				}
@@ -87,17 +99,16 @@ func ForwardUDP(ctxA Ctx, ctxB Ctx) {
 	}()
 
 	go func() {
-		buffer := make([]byte, option.UDP_PACKET_MAX_SIZE)
+		buffer := UDPBufferPool.Get().([]byte)
+		defer UDPBufferPool.Put(buffer)
 		for {
-			nr, _ := ctxB.DecryptRead(buffer)
+			nr, _ := ctxB.Read(buffer)
 			if nr > 0 {
-				if nr == 4 &&
-					buffer[0] == 0xCC && buffer[1] == 0xDD &&
-					buffer[2] == 0xEE && buffer[3] == 0xFF {
+				if nr == 4 && isUDPInitPacket(buffer[:4]) {
 					continue
 				}
 
-				nw, _ := ctxA.EncryptWrite(buffer[:nr])
+				nw, _ := ctxA.Write(buffer[:nr])
 				if nw > 0 {
 					logger.Info("<== [%d bytes] ==>", nw)
 				}
@@ -108,12 +119,12 @@ func ForwardUDP(ctxA Ctx, ctxB Ctx) {
 	select {}
 }
 
-var UDP_INIT_PACKET = []byte{
-	0xCC, 0xDD, 0xEE, 0xFF,
+func hackResizeLength(bufp *[]byte) {
+	(*(*reflect.SliceHeader)(unsafe.Pointer(bufp))).Len = option.UDP_PACKET_MAX_SIZE
 }
 
-// Each socket only writes the packet to the address which last sent packet to it recently,
-// instead of broadcasting to all the address
+// Each socket only writes the packet to the address which last sent packet to self recently,
+// instead of broadcasting to all address
 func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 	addrRegistedA := false
 	addrRegistedB := false
@@ -126,17 +137,15 @@ func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 	// A read
 	go func() {
 		for {
-			buffer := make([]byte, option.UDP_PACKET_MAX_SIZE)
-			nr, _ := ctxA.DecryptRead(buffer)
+			buffer := UDPBufferPool.Get().([]byte)
+			nr, _ := ctxA.Read(buffer)
 			if nr > 0 {
 				if !addrRegistedA {
 					addrRegistedA = true
 					addrRegistedSignalA <- struct{}{}
 				}
 
-				if !(nr == 4 &&
-					buffer[0] == 0xCC && buffer[1] == 0xDD &&
-					buffer[2] == 0xEE && buffer[3] == 0xFF) {
+				if !(nr == 4 && isUDPInitPacket(buffer[:4])) {
 					packetChannelB <- buffer[:nr]
 				}
 			}
@@ -146,17 +155,15 @@ func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 	// B read
 	go func() {
 		for {
-			buffer := make([]byte, option.UDP_PACKET_MAX_SIZE)
-			nr, _ := ctxB.DecryptRead(buffer)
+			buffer := UDPBufferPool.Get().([]byte)
+			nr, _ := ctxB.Read(buffer)
 			if nr > 0 {
 				if !addrRegistedB {
 					addrRegistedB = true
 					addrRegistedSignalB <- struct{}{}
 				}
 
-				if !(nr == 4 &&
-					buffer[0] == 0xCC && buffer[1] == 0xDD &&
-					buffer[2] == 0xEE && buffer[3] == 0xFF) {
+				if !(nr == 4 && isUDPInitPacket(buffer[:4])) {
 					packetChannelA <- buffer[:nr]
 				}
 			}
@@ -169,7 +176,10 @@ func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 		var n int
 		for {
 			packet := <-packetChannelA
-			n, _ = ctxA.EncryptWrite(packet)
+			n, _ = ctxA.Write(packet)
+			hackResizeLength(&packet)
+			UDPBufferPool.Put(packet)
+
 			if n > 0 {
 				logger.Info("<== [%d bytes] ==>", n)
 			}
@@ -182,7 +192,10 @@ func ForwardUnconnectedUDP(ctxA Ctx, ctxB Ctx) {
 		var n int
 		for {
 			packet := <-packetChannelB
-			n, _ = ctxB.EncryptWrite(packet)
+			n, _ = ctxB.Write(packet)
+			hackResizeLength(&packet)
+			UDPBufferPool.Put(packet)
+
 			if n > 0 {
 				logger.Info("<== [%d bytes] ==>", n)
 			}

@@ -4,7 +4,7 @@ const (
 	TCP_BUFFER_SIZE = 0x8000
 
 	// UDP protocol's max capacity
-	UDP_PACKET_MAX_SIZE = 0xFFFF - 28
+	UDP_PACKET_MAX_SIZE = 0xffff - 28
 
 	UDP_PACKET_CHANNEL_SIZE = 0x800
 
@@ -20,11 +20,10 @@ const (
 var (
 	TIMEOUT = 5000
 
-	PROTOCOL = "TCP"
-
 	// enable log output
 	VERBOSE = false
 
 	// logic optimization, changed in v0.1.1
-	FORWARD_WITHOUT_DEC = false
+	FORWARD_WITHOUT_DEC      = false
+	FORWARD_WITHOUT_COMPRESS = false
 )

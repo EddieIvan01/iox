@@ -30,24 +30,6 @@ const (
 	socksCmdConnect = 0x01
 )
 
-func readAtLeast(r netio.Ctx, buf []byte, min int) (n int, err error) {
-	if len(buf) < min {
-		return 0, io.ErrShortBuffer
-	}
-
-	for n < min && err == nil {
-		var nn int
-		nn, err = r.DecryptRead(buf[n:])
-		n += nn
-	}
-	if n >= min {
-		err = nil
-	} else if n > 0 && err == io.EOF {
-		err = io.ErrUnexpectedEOF
-	}
-	return
-}
-
 func handShake(conn netio.Ctx) (err error) {
 	const (
 		idVer     = 0
@@ -59,7 +41,7 @@ func handShake(conn netio.Ctx) (err error) {
 	var n int
 
 	// make sure we get the nmethod field
-	if n, err = readAtLeast(conn, buf, idNmethod+1); err != nil {
+	if n, err = io.ReadAtLeast(conn, buf, idNmethod+1); err != nil {
 		return
 	}
 
@@ -72,7 +54,7 @@ func handShake(conn netio.Ctx) (err error) {
 	if n == msgLen {               // handshake done, common case
 		// do nothing, jump directly to send confirmation
 	} else if n < msgLen { // has more methods to read, rare case
-		if _, err = readAtLeast(conn, buf[n:msgLen], len(buf[n:msgLen])); err != nil {
+		if _, err = io.ReadAtLeast(conn, buf[n:msgLen], len(buf[n:msgLen])); err != nil {
 			return
 		}
 	} else { // error, should not get extra data
@@ -87,7 +69,7 @@ func handShake(conn netio.Ctx) (err error) {
 	   X'FF' NO ACCEPTABLE METHODS
 	*/
 	// send confirmation: version 5, no authentication required
-	_, err = conn.EncryptWrite([]byte{socksVer5, 0})
+	_, err = conn.Write([]byte{socksVer5, 0})
 
 	return
 }
@@ -114,7 +96,7 @@ func parseTarget(conn netio.Ctx) (host string, err error) {
 	var n int
 
 	// read till we get possible domain length field
-	if n, err = readAtLeast(conn, buf, idDmLen+1); err != nil {
+	if n, err = io.ReadAtLeast(conn, buf, idDmLen+1); err != nil {
 		return
 	}
 
@@ -156,7 +138,7 @@ func parseTarget(conn netio.Ctx) (host string, err error) {
 	if n == reqLen {
 		// common case, do nothing
 	} else if n < reqLen { // rare case
-		if _, err = readAtLeast(conn, buf[n:reqLen], len(buf[n:reqLen])); err != nil {
+		if _, err = io.ReadAtLeast(conn, buf[n:reqLen], len(buf[n:reqLen])); err != nil {
 			return
 		}
 	} else {
@@ -229,10 +211,10 @@ func pipeWhenClose(conn netio.Ctx, target string) {
 	rep[pindex] = byte((tcpAddr.Port >> 8) & 0xff)
 	rep[pindex+1] = byte(tcpAddr.Port & 0xff)
 
-	conn.EncryptWrite(rep[0 : pindex+2])
+	conn.Write(rep[0 : pindex+2])
 	// Transfer data
 
-	remoteConnCtx, err := netio.NewTCPCtx(remoteConn, false)
+	remoteConnCtx, err := netio.NewTCPCtx(remoteConn, false, false)
 	if err != nil {
 		logger.Info("Socks5 remote connect error: %s", err.Error())
 		return

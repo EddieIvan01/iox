@@ -1,3 +1,11 @@
+v0.5:
+    1. New command line interface
+
+    2. KCP protocol support
+
+    3. Traffic compress / multiplexing I/O support
+
+
 v0.4:
     1. Add TCP multiplexing in ProxyRemote(reverse proxy), only one TCP connection will be 
        established between the victim and our forward server

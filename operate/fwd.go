@@ -1,56 +1,56 @@
 package operate
 
 import (
-	"iox/crypto"
 	"iox/logger"
 	"iox/netio"
 	"iox/option"
 	"net"
+	"os"
 	"time"
 )
 
-func local2RemoteTCP(local string, remote string, lenc bool, renc bool) {
-	listener, err := net.Listen("tcp", local)
+func local2RemoteReliableProto(localDesc *option.SocketDesc, remoteDesc *option.SocketDesc) {
+	listener, err := localDesc.GetListener()
 	if err != nil {
-		logger.Warn("Listen on %s error: %s", local, err.Error())
+		logger.Warn("Listen on %s error: %s", localDesc.Addr, err.Error())
 		return
 	}
 	defer listener.Close()
 
 	for {
-		logger.Info("Wait for connection on %s", local)
+		logger.Info("Wait for connection on %s", localDesc.Addr)
 
 		localConn, err := listener.Accept()
 		if err != nil {
+			if _, ok := err.(*net.OpError); ok || err == net.ErrClosed {
+				logger.Success("Smux session has been closed")
+				os.Exit(0)
+			}
 			logger.Warn("Handle local connect error: %s", err.Error())
 			continue
 		}
 
 		go func() {
-			defer localConn.Close()
-
 			logger.Info("Connection from %s", localConn.RemoteAddr().String())
-			logger.Info("Connecting " + remote)
+			logger.Info("Connecting " + remoteDesc.Addr)
 
-			localConnCtx, err := netio.NewTCPCtx(localConn, lenc)
+			localConnCtx, err := netio.NewTCPCtx(localConn, localDesc.Secret, localDesc.Compress)
+			defer localConnCtx.Close()
 			if err != nil {
 				logger.Warn("Handle local connect error: %s", err.Error())
 				return
 			}
 
-			remoteConn, err := net.DialTimeout(
-				"tcp", remote,
-				time.Millisecond*time.Duration(option.TIMEOUT),
-			)
+			remoteConn, err := remoteDesc.GetConn()
 			if err != nil {
-				logger.Warn("Connect remote %s error: %s", remote, err.Error())
+				logger.Warn("Connect remote %s error: %s", remoteDesc.Addr, err.Error())
 				return
 			}
-			defer remoteConn.Close()
 
-			remoteConnCtx, err := netio.NewTCPCtx(remoteConn, renc)
+			remoteConnCtx, err := netio.NewTCPCtx(remoteConn, remoteDesc.Secret, remoteDesc.Compress)
+			defer remoteConnCtx.Close()
 			if err != nil {
-				logger.Warn("Connect remote %s error: %s", remote, err.Error())
+				logger.Warn("Connect remote %s error: %s", remoteDesc.Addr, err.Error())
 				return
 			}
 
@@ -64,36 +64,26 @@ func local2RemoteTCP(local string, remote string, lenc bool, renc bool) {
 
 }
 
-func local2RemoteUDP(local string, remote string, lenc bool, renc bool) {
-	localAddr, err := net.ResolveUDPAddr("udp", local)
+func local2RemoteUDP(localDesc *option.SocketDesc, remoteDesc *option.SocketDesc) {
+	listener, err := localDesc.GetUDPConn()
 	if err != nil {
-		logger.Warn("Parse udp address %s error: %s", local, err.Error())
-		return
-	}
-	listener, err := net.ListenUDP("udp", localAddr)
-	if err != nil {
-		logger.Warn("Listen udp on %s error: %s", local, err.Error())
+		logger.Warn("Listen udp on %s error: %s", localDesc.Addr, err.Error())
 		return
 	}
 	defer listener.Close()
 
-	remoteAddr, err := net.ResolveUDPAddr("udp", remote)
+	remoteConn, err := remoteDesc.GetUDPConn()
 	if err != nil {
-		logger.Warn("Parse udp address %s error: %s", local, err.Error())
-		return
-	}
-	remoteConn, err := net.DialUDP("udp", nil, remoteAddr)
-	if err != nil {
-		logger.Warn("Dial remote udp %s error: %s", local, err.Error())
+		logger.Warn("Dial remote udp %s error: %s", remoteDesc.Addr, err.Error())
 		return
 	}
 	defer remoteConn.Close()
 
-	listenerCtx, err := netio.NewUDPCtx(listener, lenc, false)
+	listenerCtx, err := netio.NewUDPCtx(listener, localDesc.Secret, false)
 	if err != nil {
 		return
 	}
-	remoteCtx, err := netio.NewUDPCtx(remoteConn, renc, true)
+	remoteCtx, err := netio.NewUDPCtx(remoteConn, remoteDesc.Secret, true)
 	if err != nil {
 		return
 	}
@@ -101,101 +91,102 @@ func local2RemoteUDP(local string, remote string, lenc bool, renc bool) {
 	netio.ForwardUDP(listenerCtx, remoteCtx)
 }
 
-func Local2Remote(local string, remote string, lenc bool, renc bool) {
-	if option.PROTOCOL == "TCP" {
-		logger.Success("Forward TCP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
-			local, lenc, remote, renc)
-		local2RemoteTCP(local, remote, lenc, renc)
+func Local2Remote(localDesc *option.SocketDesc, remoteDesc *option.SocketDesc) {
+	logger.Success("Forward traffic between %s and %s",
+		localDesc, remoteDesc)
+
+	if localDesc.IsProtoReliable() {
+		local2RemoteReliableProto(localDesc, remoteDesc)
 	} else {
-		logger.Success("Forward UDP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
-			local, lenc, remote, renc)
-		local2RemoteUDP(local, remote, lenc, renc)
+		local2RemoteUDP(localDesc, remoteDesc)
 	}
 }
 
-func local2LocalTCP(localA string, localB string, laenc bool, lbenc bool) {
+func local2LocalReliableProto(localDescA *option.SocketDesc, localDescB *option.SocketDesc) {
 	var listenerA net.Listener
 	var listenerB net.Listener
 
+	signal := make(chan struct{}, 1)
+	go func() {
+		var err error
+		listenerA, err = localDescA.GetListener()
+		if err != nil {
+			logger.Warn("Listen on %s error: %s", localDescA.Addr, err.Error())
+			return
+		}
+		signal <- struct{}{}
+	}()
+	go func() {
+		var err error
+		listenerB, err = localDescB.GetListener()
+		if err != nil {
+			logger.Warn("Listen on %s error: %s", localDescB.Addr, err.Error())
+			return
+		}
+		signal <- struct{}{}
+	}()
+	<-signal
+	<-signal
+
+	defer listenerA.Close()
+	defer listenerB.Close()
+
 	for {
-		signal := make(chan byte)
 		var localConnA net.Conn
 		var localConnB net.Conn
 
 		go func() {
-			var err error
-			listenerA, err = net.Listen("tcp", localA)
-			if err != nil {
-				logger.Warn("Listen on %s error: %s", localA, err.Error())
-				return
-			}
-			defer listenerA.Close()
-
 			for {
-				logger.Info("Wait for connection on %s", localA)
+				logger.Info("Wait for connection on %s", localDescA.Addr)
 
 				var err error
 				localConnA, err = listenerA.Accept()
 				if err != nil {
+					if _, ok := err.(*net.OpError); ok || err == net.ErrClosed {
+						logger.Success("Smux session has been closed")
+						os.Exit(0)
+					}
 					logger.Warn("Handle connection error: %s", err.Error())
 					continue
 				}
 				break
 			}
-			signal <- 'A'
+			signal <- struct{}{}
 		}()
 
 		go func() {
-			var err error
-			listenerB, err = net.Listen("tcp", localB)
-			if err != nil {
-				logger.Warn("Listen on %s error: %s", localB, err.Error())
-				return
-			}
-			defer listenerB.Close()
-
 			for {
-				logger.Info("Wait for connection on %s", localB)
+				logger.Info("Wait for connection on %s", localDescB.Addr)
 
 				var err error
 				localConnB, err = listenerB.Accept()
 				if err != nil {
+					if _, ok := err.(*net.OpError); ok || err == net.ErrClosed {
+						logger.Success("Smux session has been closed")
+						os.Exit(0)
+					}
 					logger.Warn("Handle connection error: %s", err.Error())
 					continue
 				}
 				break
 			}
-			signal <- 'B'
+			signal <- struct{}{}
 		}()
 
-		switch <-signal {
-		case 'A':
-			logger.Info("%s connected, waiting for %s", localA, localB)
-		case 'B':
-			logger.Info("%s connected, waiting for %s", localB, localA)
-		}
-
+		<-signal
 		<-signal
 
 		go func() {
-			defer func() {
-				if localConnA != nil {
-					localConnA.Close()
-				}
-
-				if localConnB != nil {
-					localConnB.Close()
-				}
-			}()
-
-			localConnCtxA, err := netio.NewTCPCtx(localConnA, laenc)
+			localConnCtxA, err := netio.NewTCPCtx(localConnA, localDescA.Secret, localDescA.Compress)
+			defer localConnCtxA.Close()
 			if err != nil {
-				logger.Warn("handle local %s error: %s", localA, err.Error())
+				return
 			}
 
-			localConnCtxB, err := netio.NewTCPCtx(localConnB, lbenc)
+			localConnCtxB, err := netio.NewTCPCtx(localConnB, localDescB.Secret, localDescB.Compress)
+			defer localConnCtxB.Close()
 			if err != nil {
-				logger.Warn("handle local %s error: %s", localB, err.Error())
+				return
 			}
 
 			logger.Info("Open pipe: %s <== FWD ==> %s",
@@ -207,36 +198,26 @@ func local2LocalTCP(localA string, localB string, laenc bool, lbenc bool) {
 	}
 }
 
-func local2LocalUDP(localA string, localB string, laenc bool, lbenc bool) {
-	localAddrA, err := net.ResolveUDPAddr("udp", localA)
+func local2LocalUDP(localDescA *option.SocketDesc, localDescB *option.SocketDesc) {
+	listenerA, err := localDescA.GetUDPConn()
 	if err != nil {
-		logger.Warn("Parse udp address %s error: %s", localA, err.Error())
-		return
-	}
-	listenerA, err := net.ListenUDP("udp", localAddrA)
-	if err != nil {
-		logger.Warn("Listen udp on %s error: %s", localA, err.Error())
+		logger.Warn("Listen udp on %s error: %s", localDescA.Addr, err.Error())
 		return
 	}
 	defer listenerA.Close()
 
-	localAddrB, err := net.ResolveUDPAddr("udp", localB)
+	listenerB, err := localDescB.GetUDPConn()
 	if err != nil {
-		logger.Warn("Parse udp address %s error: %s", localB, err.Error())
-		return
-	}
-	listenerB, err := net.ListenUDP("udp", localAddrB)
-	if err != nil {
-		logger.Warn("Listen udp on %s error: %s", localB, err.Error())
+		logger.Warn("Listen udp on %s error: %s", localDescB.Addr, err.Error())
 		return
 	}
 	defer listenerB.Close()
 
-	listenerCtxA, err := netio.NewUDPCtx(listenerA, laenc, false)
+	listenerCtxA, err := netio.NewUDPCtx(listenerA, localDescA.Secret, false)
 	if err != nil {
 		return
 	}
-	listenerCtxB, err := netio.NewUDPCtx(listenerB, lbenc, false)
+	listenerCtxB, err := netio.NewUDPCtx(listenerB, localDescB.Secret, false)
 	if err != nil {
 		return
 	}
@@ -244,20 +225,18 @@ func local2LocalUDP(localA string, localB string, laenc bool, lbenc bool) {
 	netio.ForwardUnconnectedUDP(listenerCtxA, listenerCtxB)
 }
 
-func Local2Local(localA string, localB string, laenc bool, lbenc bool) {
-	if option.PROTOCOL == "TCP" {
-		logger.Success("Forward TCP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
-			localA, laenc, localB, lbenc)
+func Local2Local(localDescA *option.SocketDesc, localDescB *option.SocketDesc) {
+	logger.Success("Forward traffic between %s and %s",
+		localDescA, localDescB)
 
-		local2LocalTCP(localA, localB, laenc, lbenc)
+	if localDescA.IsProtoReliable() {
+		local2LocalReliableProto(localDescA, localDescB)
 	} else {
-		logger.Success("Forward UDP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
-			localA, laenc, localB, lbenc)
-		local2LocalUDP(localA, localB, laenc, lbenc)
+		local2LocalUDP(localDescA, localDescB)
 	}
 }
 
-func remote2remoteTCP(remoteA string, remoteB string, raenc bool, rbenc bool) {
+func remote2RemoteReliableProto(remoteDescA *option.SocketDesc, remoteDescB *option.SocketDesc) {
 	for {
 		var remoteConnA net.Conn
 		var remoteConnB net.Conn
@@ -267,14 +246,11 @@ func remote2remoteTCP(remoteA string, remoteB string, raenc bool, rbenc bool) {
 		go func() {
 			for {
 				var err error
-				logger.Info("Connecting remote %s", remoteA)
+				logger.Info("Connecting remote %s", remoteDescA.Addr)
 
-				remoteConnA, err = net.DialTimeout(
-					"tcp", remoteA,
-					time.Millisecond*time.Duration(option.TIMEOUT),
-				)
+				remoteConnA, err = remoteDescA.GetConn()
 				if err != nil {
-					logger.Info("Connect remote %s error, retrying", remoteA)
+					logger.Info("Connect remote %s error, retrying", remoteDescA.Addr)
 					time.Sleep(option.CONNECTING_RETRY_DURATION * time.Millisecond)
 					continue
 				}
@@ -287,14 +263,11 @@ func remote2remoteTCP(remoteA string, remoteB string, raenc bool, rbenc bool) {
 		go func() {
 			for {
 				var err error
-				logger.Info("Connecting remote %s", remoteB)
+				logger.Info("Connecting remote %s", remoteDescB.Addr)
 
-				remoteConnB, err = net.DialTimeout(
-					"tcp", remoteB,
-					time.Millisecond*time.Duration(option.TIMEOUT),
-				)
+				remoteConnB, err = remoteDescB.GetConn()
 				if err != nil {
-					logger.Info("Connect remote %s error, retrying", remoteB)
+					logger.Info("Connect remote %s error, retrying", remoteDescB.Addr)
 					time.Sleep(option.CONNECTING_RETRY_DURATION * time.Millisecond)
 					continue
 				}
@@ -308,122 +281,64 @@ func remote2remoteTCP(remoteA string, remoteB string, raenc bool, rbenc bool) {
 		<-signal
 
 		go func() {
-			defer func() {
-				if remoteConnA != nil {
-					remoteConnA.Close()
-				}
-
-				if remoteConnB != nil {
-					remoteConnB.Close()
-				}
-			}()
-
-			if remoteConnA != nil && remoteConnB != nil {
-				remoteConnCtxA, err := netio.NewTCPCtx(remoteConnA, raenc)
-				if err != nil {
-					logger.Warn("Handle remote %s error: %s", remoteA, err.Error())
-				}
-				remoteConnCtxB, err := netio.NewTCPCtx(remoteConnB, rbenc)
-				if err != nil {
-					logger.Warn("Handle remote %s error: %s", remoteB, err.Error())
-				}
-
-				logger.Info("Start pipe: %s <== FWD ==> %s",
-					remoteConnA.RemoteAddr().String(), remoteConnB.RemoteAddr().String())
-				netio.PipeForward(remoteConnCtxA, remoteConnCtxB)
-				logger.Info("Close pipe: %s <== FWD ==> %s",
-					remoteConnA.RemoteAddr().String(), remoteConnB.RemoteAddr().String())
+			remoteConnCtxA, err := netio.NewTCPCtx(remoteConnA, remoteDescA.Secret, remoteDescA.Compress)
+			defer remoteConnCtxA.Close()
+			if err != nil {
+				return
 			}
+			remoteConnCtxB, err := netio.NewTCPCtx(remoteConnB, remoteDescB.Secret, remoteDescB.Compress)
+			defer remoteConnCtxB.Close()
+			if err != nil {
+				return
+			}
+
+			logger.Info("Start pipe: %s <== FWD ==> %s",
+				remoteConnA.RemoteAddr().String(), remoteConnB.RemoteAddr().String())
+			netio.PipeForward(remoteConnCtxA, remoteConnCtxB)
+			logger.Info("Close pipe: %s <== FWD ==> %s",
+				remoteConnA.RemoteAddr().String(), remoteConnB.RemoteAddr().String())
+
 		}()
 	}
 }
 
-func remote2remoteUDP(remoteA string, remoteB string, raenc bool, rbenc bool) {
-	remoteAddrA, err := net.ResolveUDPAddr("udp", remoteA)
+func remote2RemoteUDP(remoteDescA *option.SocketDesc, remoteDescB *option.SocketDesc) {
+	remoteConnA, err := remoteDescA.GetUDPConn()
 	if err != nil {
-		logger.Warn("Parse udp address %s error: %s", remoteA, err.Error())
-		return
-	}
-	remoteConnA, err := net.DialUDP("udp", nil, remoteAddrA)
-	if err != nil {
-		logger.Warn("Dial remote udp %s error: %s", remoteA, err.Error())
+		logger.Warn("Dial remote udp %s error: %s", remoteDescA.Addr, err.Error())
 		return
 	}
 	defer remoteConnA.Close()
 
-	remoteAddrB, err := net.ResolveUDPAddr("udp", remoteB)
+	remoteConnB, err := remoteDescB.GetUDPConn()
 	if err != nil {
-		logger.Warn("Parse udp address %s error: %s", remoteB, err.Error())
-		return
-	}
-	remoteConnB, err := net.DialUDP("udp", nil, remoteAddrB)
-	if err != nil {
-		logger.Warn("Dial remote udp %s error: %s", remoteB, err.Error())
+		logger.Warn("Dial remote udp %s error: %s", remoteDescB.Addr, err.Error())
 		return
 	}
 	defer remoteConnB.Close()
 
-	remoteCtxA, err := netio.NewUDPCtx(remoteConnA, raenc, true)
+	remoteCtxA, err := netio.NewUDPCtx(remoteConnA, remoteDescA.Secret, true)
 	if err != nil {
 		return
 	}
-	remoteCtxB, err := netio.NewUDPCtx(remoteConnB, rbenc, true)
+	remoteCtxB, err := netio.NewUDPCtx(remoteConnB, remoteDescB.Secret, true)
 	if err != nil {
 		return
 	}
 
-	{
-		// Need to send init packet to register the remote address, it doesn't matter even tough target is not `iox`
-		//
-		// There is a design fault here, and I need to consider the case where the FORWARD_WITHOUT_DEC flag is set
-		// but actually needs to be encrypted, otherwise there is no IV in the ciphertext
-		if raenc {
-			iv, err := crypto.RandomNonce()
-			cipher, err := crypto.NewCipher(iv)
-			if err != nil {
-				return
-			}
-
-			b := make([]byte, 4, 20)
-			copy(b, netio.UDP_INIT_PACKET)
-
-			cipher.StreamXOR(b, b)
-			b = append(b, iv...)
-			remoteCtxA.Write(b)
-
-		} else {
-			remoteCtxA.Write(netio.UDP_INIT_PACKET)
-		}
-		if rbenc {
-			iv, err := crypto.RandomNonce()
-			cipher, err := crypto.NewCipher(iv)
-			if err != nil {
-				return
-			}
-
-			b := make([]byte, 4, 20)
-			copy(b, netio.UDP_INIT_PACKET)
-
-			cipher.StreamXOR(b, b)
-			b = append(b, iv...)
-			remoteCtxB.Write(b)
-
-		} else {
-			remoteCtxB.Write(netio.UDP_INIT_PACKET)
-		}
-	}
+	remoteCtxA.Write(netio.UDP_INIT_PACKET)
+	remoteCtxB.Write(netio.UDP_INIT_PACKET)
 
 	netio.ForwardUDP(remoteCtxA, remoteCtxB)
 }
 
-func Remote2Remote(remoteA string, remoteB string, raenc bool, rbenc bool) {
-	if option.PROTOCOL == "TCP" {
-		logger.Success("Forward TCP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
-			remoteA, raenc, remoteB, rbenc)
-		remote2remoteTCP(remoteA, remoteB, raenc, rbenc)
+func Remote2Remote(remoteDescA *option.SocketDesc, remoteDescB *option.SocketDesc) {
+	logger.Success("Forward traffic between %s and %s",
+		remoteDescA, remoteDescB)
+
+	if remoteDescA.IsProtoReliable() {
+		remote2RemoteReliableProto(remoteDescA, remoteDescB)
 	} else {
-		logger.Success("Forward UDP traffic between %s (encrypted: %v) and %s (encrypted: %v)",
-			remoteA, raenc, remoteB, rbenc)
-		remote2remoteUDP(remoteA, remoteB, raenc, rbenc)
+		remote2RemoteUDP(remoteDescA, remoteDescB)
 	}
 }

@@ -1,16 +1,16 @@
 package netio
 
 import (
+	"io"
 	"iox/crypto"
 	"iox/option"
 	"net"
+
+	"github.com/klauspost/compress/s2"
 )
 
 type Ctx interface {
-	DecryptRead(b []byte) (int, error)
-	EncryptWrite(b []byte) (int, error)
-
-	net.Conn
+	io.ReadWriteCloser
 }
 
 var _ Ctx = &TCPCtx{}
@@ -18,63 +18,101 @@ var _ Ctx = &UDPCtx{}
 
 type TCPCtx struct {
 	net.Conn
-	encrypted bool
 
-	// Ensure stream cipher synchronous
-	encCipher *crypto.Cipher
-	decCipher *crypto.Cipher
+	reader io.Reader
+	writer io.Writer
+
+	writerFlush func() error
+
+	encrypted bool
+	compress  bool
 }
 
-func NewTCPCtx(conn net.Conn, encrypted bool) (*TCPCtx, error) {
-	// if tc, ok := conn.(*net.TCPConn); ok {
-	//     tc.SetLinger(0)
-	// }
-
+// The returned *TCPCtx will never be nil
+func NewTCPCtx(conn net.Conn, encrypted bool, compress bool) (*TCPCtx, error) {
 	encrypted = encrypted && !option.FORWARD_WITHOUT_DEC
+	compress = compress && !option.FORWARD_WITHOUT_COMPRESS
 
 	ctx := &TCPCtx{
-		Conn:      conn,
+		Conn: conn,
+
+		reader: conn,
+		writer: conn,
+
 		encrypted: encrypted,
 	}
 
 	if encrypted {
-		encCipher, decCipher, err := crypto.NewCipherPair()
+		encIV, err := crypto.RandomNonce()
 		if err != nil {
-			return nil, err
+			return ctx, err
+		}
+		_, err = conn.Write(encIV)
+		if err != nil {
+			return ctx, err
 		}
 
-		ctx.encCipher = encCipher
-		ctx.decCipher = decCipher
+		decIV := make([]byte, 0x18)
+		_, err = io.ReadFull(conn, decIV)
+		if err != nil {
+			return ctx, err
+		}
+
+		ctx.reader, err = crypto.NewReader(ctx.reader, decIV)
+		if err != nil {
+			return ctx, err
+		}
+		ctx.writer, err = crypto.NewWriter(ctx.writer, encIV)
+		if err != nil {
+			return ctx, err
+		}
 	}
 
+	if compress {
+		ctx.reader = GetCompressReader(ctx.reader)
+
+		writer := GetCompressWriter(ctx.writer)
+		ctx.writerFlush = writer.Flush
+		ctx.writer = writer
+	}
+
+	ctx.compress = compress
 	return ctx, nil
 }
 
-func (c *TCPCtx) DecryptRead(b []byte) (int, error) {
-	n, err := c.Read(b)
-	if err != nil {
-		return n, err
-	}
+func (ctx *TCPCtx) Read(b []byte) (int, error) {
+	return ctx.reader.Read(b)
+}
 
-	if c.encrypted {
-		c.decCipher.StreamXOR(b[:n], b[:n])
+func (ctx *TCPCtx) Write(b []byte) (int, error) {
+	n, err := ctx.writer.Write(b)
+	if ctx.writerFlush != nil {
+		err = ctx.writerFlush()
+		if err != nil {
+			return 0, err
+		}
 	}
-
 	return n, err
 }
 
-func (c *TCPCtx) EncryptWrite(b []byte) (int, error) {
-	if c.encrypted {
-		c.encCipher.StreamXOR(b, b)
+func (ctx *TCPCtx) Close() error {
+	if ctx.compress {
+		PutCompressReader(ctx.reader.(*s2.Reader))
+		PutCompressWriter(ctx.writer.(*s2.Writer))
 	}
-	return c.Write(b)
+
+	if ctx.Conn != nil {
+		return ctx.Conn.Close()
+	}
+	return nil
 }
 
 type UDPCtx struct {
 	*net.UDPConn
-	encrypted  bool
-	connected  bool
 	remoteAddr *net.UDPAddr
+
+	encrypted bool
+	connected bool
 
 	// sync.Mutex
 }
@@ -92,26 +130,26 @@ func NewUDPCtx(conn *net.UDPConn, encrypted bool, connected bool) (*UDPCtx, erro
 }
 
 // Encryption for packet is different from stream
-func (c *UDPCtx) DecryptRead(b []byte) (int, error) {
+func (ctx *UDPCtx) Read(b []byte) (int, error) {
 	var n int
 	var err error
 
-	if !c.connected {
+	if !ctx.connected {
 		var remoteAddr *net.UDPAddr
-		n, remoteAddr, err = c.ReadFromUDP(b)
+		n, remoteAddr, err = ctx.UDPConn.ReadFromUDP(b)
 		if err != nil {
 			return n, err
 		}
-		c.remoteAddr = remoteAddr
+		ctx.remoteAddr = remoteAddr
 
 	} else {
-		n, err = c.Read(b)
+		n, err = ctx.UDPConn.Read(b)
 		if err != nil {
 			return n, err
 		}
 	}
 
-	if c.encrypted {
+	if ctx.encrypted {
 		if len(b) < 0x18 {
 			// no nonce, skip
 			return 0, nil
@@ -131,8 +169,8 @@ func (c *UDPCtx) DecryptRead(b []byte) (int, error) {
 	return n, err
 }
 
-func (c *UDPCtx) EncryptWrite(b []byte) (int, error) {
-	if c.encrypted {
+func (ctx *UDPCtx) Write(b []byte) (int, error) {
+	if ctx.encrypted {
 		iv, err := crypto.RandomNonce()
 		cipher, err := crypto.NewCipher(iv)
 		if err != nil {
@@ -143,10 +181,10 @@ func (c *UDPCtx) EncryptWrite(b []byte) (int, error) {
 		b = append(b, iv...)
 	}
 
-	if !c.connected {
-		return c.WriteTo(b, c.remoteAddr)
+	if !ctx.connected {
+		return ctx.UDPConn.WriteTo(b, ctx.remoteAddr)
 	}
-	return c.Write(b)
+	return ctx.UDPConn.Write(b)
 }
 
 /*
